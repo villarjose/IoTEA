@@ -9,8 +9,13 @@ import numpy as np
 import pandas as pd
 import inspect
 from scipy import signal as scsignal
+import scipy.fftpack as scpyfft
 
-def sma(x):
+
+######################################
+## Section devoted to transformations
+######################################
+def sma(x, axis = 0):
     """Function sma(x)
     Computes the Signal Magnitude Area as the sum of the absolute values of its 
     components in each dimension.
@@ -19,6 +24,8 @@ Sintax:
     sma(x)
 Parameters:
     x: a numpy array of dimension mxn, with n in {1, 2, 3} or n>=9
+    axis:   the axis along with the data series is stored. 
+            Follows the python criteria: -1, 0 (default), 1, ...
 Returns:
     a numpy vector of dimension 1x1 or 1x3
     
@@ -37,39 +44,91 @@ for the modulus of these accelerations -ACC, BA and G-. Therefore, the output
 is an array of mx3 -<sma(acc), sma(ba), sma(g)>-.
 
     """
-    if x.ndim > 2:
-        name = inspect.getframeinfo(inspect.currentframe())[2]
-        raise Exception(name + ": Invalid dimensions of the data array.");
-    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
+    if x.ndim == 1:
         r = np.sum(np.abs(x))
         rlen = max(1, r.size)
         return r / rlen
-    if x.shape[1] <= 3: #case of ACCdf 
-        r = np.sum(np.abs(x),axis=0) # np.fromiter(map(lambda v: sum(abs(v)), x), np.float)
-        rlen = max(1, x.shape[0])
-        return np.sum(r)/len(r)
-    elif x.shape[1] >=9: #case of ACC_BA_Gdf
-        acc = np.sum(np.abs(x[:,0:3]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,0:3]), np.float)
-        ba = np.sum(np.abs(x[:,3:6]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,3:6]), np.float)
-        g = np.sum(np.abs(x[:,6:9]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,6:9]), np.float)
-        
-        r = np.stack((np.sum(acc), np.sum(ba), np.sum(g))) #np.stack((acc,ba,g),axis=1)
-        xlen = max(1, x.shape[0])
-        return r/xlen
-    else:
+    elif x.ndim > 2:
         name = inspect.getframeinfo(inspect.currentframe())[2]
-        raise Exception(name + ": Invalid number of columns of the data array.");
+        raise Exception(name + ": Invalid dimensions of the data array.");
+    else:
+        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == axis))
+        if rdim > 3 and rdim < 9:
+            name = inspect.getframeinfo(inspect.currentframe())[2]
+            raise Exception(name + ": Invalid number of columns of the data array.");#def sma(x):
+        elif rdim <= 3 :
+            r = np.sum(np.abs(x)) # np.fromiter(map(lambda v: sum(abs(v)), x), np.float)
+            rlen = max(1, x.shape[axis])
+            return r/rlen
+        else : #rdim sholud be >=9
+            acc = np.sum(np.abs(x[:,0:3]))
+            ba = np.sum(np.abs(x[:,3:6]))
+            g = np.sum(np.abs(x[:,6:9]))
+            r = np.stack((acc, ba, g)) #np.stack((acc,ba,g),axis=1)
+            rlen = max(1, x.shape[axis])
+            return r/rlen
+#    """Function sma(x)
+#    Computes the Signal Magnitude Area as the sum of the absolute values of its 
+#    components in each dimension.
+#
+#Sintax:
+#    sma(x)
+#Parameters:
+#    x: a numpy array of dimension mxn, with n in {1, 2, 3} or n>=9
+#Returns:
+#    a numpy vector of dimension 1x1 or 1x3
+#    
+#    
+#For instance,if you have an ACCdf object, you can call sma using the 
+#get_components method:
+#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
+#    >>> sma_a = sma(a.get_components())
+#
+#And if you have an ACC_BA_Gdf object, you can call sma using the get_components 
+#method:
+#    >>> a = ACC_BA_Gdf(myDataFrame) #this is from a accelerometer
+#    >>> sma_a = sma(a.get_components())
+#In this latter case, SMA is computed for the acc, ba, and g components, but not 
+#for the modulus of these accelerations -ACC, BA and G-. Therefore, the output 
+#is an array of mx3 -<sma(acc), sma(ba), sma(g)>-.
+#
+#    """
+#    if x.ndim > 2:
+#        name = inspect.getframeinfo(inspect.currentframe())[2]
+#        raise Exception(name + ": Invalid dimensions of the data array.");
+#    elif x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
+#        r = np.sum(np.abs(x))
+#        rlen = max(1, r.size)
+#        return r / rlen
+#    elif x.shape[1] <= 3: #case of ACCdf 
+#        r = np.sum(np.abs(x),axis=0) # np.fromiter(map(lambda v: sum(abs(v)), x), np.float)
+#        rlen = max(1, x.shape[0])
+#        return np.sum(r)/len(r)
+#    elif x.shape[1] >=9: #case of ACC_BA_Gdf
+#        acc = np.sum(np.abs(x[:,0:3]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,0:3]), np.float)
+#        ba = np.sum(np.abs(x[:,3:6]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,3:6]), np.float)
+#        g = np.sum(np.abs(x[:,6:9]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,6:9]), np.float)
+#        
+#        r = np.stack((np.sum(acc), np.sum(ba), np.sum(g))) #np.stack((acc,ba,g),axis=1)
+#        xlen = max(1, x.shape[0])
+#        return r/xlen
+#    else:
+#        name = inspect.getframeinfo(inspect.currentframe())[2]
+#        raise Exception(name + ": Invalid number of columns of the data array.");
 
 
-def aom(x):
+def aom(x, axis = 0):
     """Function aom(x)
     Computes the Amount of Movement as the sum of the differences between
 the maximum and the minimum values in the different axis of a sample.    
 
 Sintax:
-    aom(x)
+    aom(x, axis)
 Parameters:
     x: a numpy array of dimension mxn, with n in {2, 3} or n>=9
+    axis:   the axis along with the data series is stored. 
+            Follows the python criteria: -1, 0 (default), 1.
+            It is not allowed to have mode than 2 dimensions
 Returns:
     a numpy vector of dimension 1x1 or 1x3
     
@@ -91,30 +150,78 @@ is an array of mx3 -<aom(acc), aom(ba), aom(g)>-.
     if x.ndim > 2:
         name = inspect.getframeinfo(inspect.currentframe())[2]
         raise Exception(name + ": Invalid dimensions of the data array.");
-    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
-        r = np.abs(np.max(x, axis=0) - np.min(x, axis=0))
-        return np.sum(r)                                #yes, it is a 0.0 !!!!
-    if x.shape[1] <= 3: #case of ACCdf
-        r = np.abs(np.max(x, axis=1) - np.min(x, axis=1))
-        return np.sum(r)
-    elif x.shape[1] >=9: #case of ACC_BA_Gdf
-        acc = np.sum(np.abs(np.max(x[:, 0:3], axis=1) - np.min(x[:, 0:3], axis=1)))
-        ba = np.sum(np.abs(np.max(x[:, 3:6], axis=1) - np.min(x[:, 3:6], axis=1)))
-        g = np.sum(np.abs(np.max(x[:, 6:9], axis=1) - np.min(x[:, 6:9], axis=1)))
-        return np.stack((acc,ba,g)) #,axis=1)
-    else:
-        name = inspect.getframeinfo(inspect.currentframe())[2]
-        raise Exception(name + ": Invalid number of columns of the data array.");
+    elif x.ndim == 1:
+        return np.abs(np.max(x) - np.min(x))
+    else :
+        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == axis))
+        if rdim > 3 and rdim < 9:
+            name = inspect.getframeinfo(inspect.currentframe())[2]
+            raise Exception(name + ": Invalid number of columns of the data array.");
+        elif rdim <= 3:
+            return np.sum(np.abs(np.max(x, axis = (1 - axis)) - 
+                                 np.min(x, axis = (1 -axis))))
+        else : # rdim >= 9!!
+            acc = np.sum(np.abs(np.max(x[:, 0:3], axis = (1 - axis)) - 
+                                np.min(x[:, 0:3], axis = (1 - axis)) ) )
+            ba = np.sum(np.abs(np.max(x[:, 3:6], axis = (1 - axis)) - 
+                               np.min(x[:, 3:6], axis = (1 - axis)) ) )
+            g = np.sum(np.abs(np.max(x[:, 6:9], axis = (1 - axis)) - 
+                              np.min(x[:, 6:9], axis = (1 - axis)) ) )
+            return np.stack((acc,ba,g))
+
+#    """Function aom(x)
+#    Computes the Amount of Movement as the sum of the differences between
+#the maximum and the minimum values in the different axis of a sample.    
+#
+#Sintax:
+#    aom(x)
+#Parameters:
+#    x: a numpy array of dimension mxn, with n in {2, 3} or n>=9
+#Returns:
+#    a numpy vector of dimension 1x1 or 1x3
+#    
+#    
+#For instance,if you have an ACCdf object, you can call aom using the 
+#get_components method:
+#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
+#    >>> aom_a = aom(a.get_components())
+#    
+#And if you have an ACC_BA_Gdf object, you can call aom using the get_components 
+#method:
+#    >>> a = ACC_BA_Gdf(myDataFrame) #this is from a accelerometer
+#    >>> aom_a = aom(a.get_components())
+#In this latter case, AoM is computed for the acc, ba, and g components, but not 
+#for the modulus of these accelerations -ACC, BA and G-. Therefore, the output 
+#is an array of mx3 -<aom(acc), aom(ba), aom(g)>-.
+#
+#    """
+#    if x.ndim > 2:
+#        name = inspect.getframeinfo(inspect.currentframe())[2]
+#        raise Exception(name + ": Invalid dimensions of the data array.");
+#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
+#        r = np.abs(np.max(x, axis=0) - np.min(x, axis=0))
+#        return np.sum(r)                                #yes, it is a 0.0 !!!!
+#    if x.shape[1] <= 3: #case of ACCdf
+#        r = np.abs(np.max(x, axis=1) - np.min(x, axis=1))
+#        return np.sum(r)
+#    elif x.shape[1] >=9: #case of ACC_BA_Gdf
+#        acc = np.sum(np.abs(np.max(x[:, 0:3], axis=1) - np.min(x[:, 0:3], axis=1)))
+#        ba = np.sum(np.abs(np.max(x[:, 3:6], axis=1) - np.min(x[:, 3:6], axis=1)))
+#        g = np.sum(np.abs(np.max(x[:, 6:9], axis=1) - np.min(x[:, 6:9], axis=1)))
+#        return np.stack((acc,ba,g)) #,axis=1)
+#    else:
+#        name = inspect.getframeinfo(inspect.currentframe())[2]
+#        raise Exception(name + ": Invalid number of columns of the data array.");
 
         
-def time_between_peaks(x, n = 2, K = 0.9):
+def time_between_peaks(x, n = 2, K = 0.9, axis = 0):
     """Function time_between_peaks(x)
     Computes the time-between-peaks as stated in 
    GENERALIZED MODELS FOR THE CLASSIFICATION OF ABNORMAL MOVEMENTS IN DAILY LIFE 
    AND ITS APPLICABILITY TO EPILEPSY CONVULSION RECOGNITION; Jose R. Villar, 
    Paula Vergara, Manuel Menendez, Enrique de la Cal, Victor M. Gonzalez and
    Javier Sedano; International Journal of Neural Systems.
-
+   
 The algorithm is:
    1.- Find the sequences with value higher than mean+K*std within the window,
    we use K set to 0.9 as default.
@@ -125,10 +232,14 @@ Sintax:
     time_between_peaks(x)
     time_between_peaks(x, 2)
     time_between_peaks(x, n = 2, K = 0.9)
+    time_between_peaks(x, n = 2, K = 0.9, axis = 0)
 Parameters:
-    x: a numpy array of dimension mxn, n is the number of features to analyze
-    n: the minimum numer of peaks to detect
-    K: the constant for computing the threshold
+    x: a numpy array of dimension mxn, n is the number of features to analyze.
+       dimensions higher than 2 raise exceptions.
+    n: the minimum numer of peaks to detect, default value is 2.
+    K: the constant for computing the threshold, default value is 0.9
+    axis: the axis along which the data series are arranged, default value is 0
+          follows the python criteria. Allowable values are -1, 0, 1.
 Returns:
     a numpy vector of dimension 1xn  with the time-between-peaks for each column.
     
@@ -140,7 +251,10 @@ get_components method:
     
 
     """
-    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
+    if x.ndim > 2:
+        name = inspect.getframeinfo(inspect.currentframe())[2]
+        raise Exception(name + ": Invalid dimensions of the data array.");
+    elif x.ndim == 1:
         m = np.mean(x)
         s = np.std(x)
         r = x > (m + 0.9 * s)
@@ -151,26 +265,94 @@ get_components method:
         if A.size > n:
             tdif = A[1:] - A[0:-1]    
             tbpks[0] = np.sum(tdif) / (A.size-1)
-            #print(str(c)+': ', A, tdif)
-    else:
-        m = np.mean(x, axis = 0)
-        s = np.std(x, axis = 0)
+        return tbpks
+    else :
+        m = np.mean(x, axis = axis)
+        s = np.std(x, axis = axis)
         r = x > (m + 0.9 * s)
-        R = r[1:, :] ^ r[0:-1, :]
-        ncolumns = x.shape[1]
-        tbpks = np.zeros(ncolumns)
-        for c in range(ncolumns):
-            A=np.arange(0,R.shape[0])[R[:,c]==True]
+        if axis == 0:
+            R = r[1:, :] ^ r[0:-1, :]
+        else:
+            R = r[:, 1:] ^ r[:, 0:-1]
+        nvars = x.shape[1 - axis]
+        tbpks = np.zeros(nvars)
+        for c in range(nvars):
+            if axis == 0:
+                A=np.arange(0,R.shape[axis])[R[:,c]==True]
+            else:
+                A=np.arange(0,R.shape[axis])[R[c,:]==True]
             if A.size < n:
                 continue
             else :    
                 tdif = A[1:] - A[0:-1]    
                 tbpks[c] = np.sum(tdif) / (A.size-1)
                 #print(str(c)+': ', A, tdif)
-    return tbpks
+        return tbpks
+        
+
+#    """Function time_between_peaks(x)
+#    Computes the time-between-peaks as stated in 
+#   GENERALIZED MODELS FOR THE CLASSIFICATION OF ABNORMAL MOVEMENTS IN DAILY LIFE 
+#   AND ITS APPLICABILITY TO EPILEPSY CONVULSION RECOGNITION; Jose R. Villar, 
+#   Paula Vergara, Manuel Menendez, Enrique de la Cal, Victor M. Gonzalez and
+#   Javier Sedano; International Journal of Neural Systems.
+#
+#The algorithm is:
+#   1.- Find the sequences with value higher than mean+K*std within the window,
+#   we use K set to 0.9 as default.
+#   2.- Keep the rising points from each of these sequences
+#   3.- Measure the mean time between them.
+#
+#Sintax:
+#    time_between_peaks(x)
+#    time_between_peaks(x, 2)
+#    time_between_peaks(x, n = 2, K = 0.9)
+#Parameters:
+#    x: a numpy array of dimension mxn, n is the number of features to analyze
+#    n: the minimum numer of peaks to detect
+#    K: the constant for computing the threshold
+#Returns:
+#    a numpy vector of dimension 1xn  with the time-between-peaks for each column.
+#    
+#    
+#For instance,if you have an ACCdf object, you can call time-between-peaks using the 
+#get_components method:
+#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
+#    >>> tbpks_a = time_between_peaks(a.get_components())
+#    
+#
+#    """
+#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
+#        m = np.mean(x)
+#        s = np.std(x)
+#        r = x > (m + 0.9 * s)
+#        R = r[1:] ^ r[0:-1]
+#        ncolumns = 1
+#        tbpks = np.zeros(ncolumns)
+#        A=np.arange(0,R.shape[0])[R==True]
+#        if A.size > n:
+#            tdif = A[1:] - A[0:-1]    
+#            tbpks[0] = np.sum(tdif) / (A.size-1)
+#            #print(str(c)+': ', A, tdif)
+#    else:
+#        m = np.mean(x, axis = 0)
+#        s = np.std(x, axis = 0)
+#        r = x > (m + 0.9 * s)
+#        R = r[1:, :] ^ r[0:-1, :]
+#        ncolumns = x.shape[1]
+#        tbpks = np.zeros(ncolumns)
+#        for c in range(ncolumns):
+#            A=np.arange(0,R.shape[0])[R[:,c]==True]
+#            if A.size < n:
+#                continue
+#            else :    
+#                tdif = A[1:] - A[0:-1]    
+#                tbpks[c] = np.sum(tdif) / (A.size-1)
+#                #print(str(c)+': ', A, tdif)
+#    return tbpks
 
 
-def sum_absolute_values(x):
+def sum_absolute_values(x, axis = 0):
     """Function time_between_peaks(x)
     Computes the sum of the absolute values for each feature in the array.
 
@@ -178,6 +360,8 @@ Sintax:
     sum_absolute_values(x)
 Parameters:
     x: a numpy array of dimension mxn, n is the number of features to analyze
+    axis:  -1, 0, 1. According to python criteria. Higher dimensions raise an
+           exception. Default value is 0.
 Returns:
     a numpy vector of dimension 1xn  with the time-between-peaks for each column.
 
@@ -191,13 +375,221 @@ get_components method:
     
 
     """
-    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
-        na = 1
+    if x.ndim > 2:
+        name = inspect.getframeinfo(inspect.currentframe())[2]
+        raise Exception(name + ": Invalid dimensions of the data array.");
+    elif x.ndim == 1:
+        return np.um(np.abs(x))
     else: 
-        na = 0
-    return np.sum(np.abs(x),axis=na)
+        return np.sum(np.abs(x),axis=axis)
+#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
+#        na = 1
+#    else: 
+#        na = 0
+#    return np.sum(np.abs(x),axis=na)
 
 
+
+######################################
+## Section devoted to FFT
+######################################
+def fft_wf(X, wf = 'hanning', axis = 0):
+    """Function fft_wf
+    Returns the required window function for computing FFT.
+
+Column vectors are supposed. 
+However, you are free to choose the axis following the python criteria:
+    axis is 0  then the data is arranged in column vectors
+    axis is 1  then the data is arranged in row vectors
+    axis is 2  then your data is a surface with axis 1 and 2...
+    axis is -1 then fft considers the last dimension
+The default value is 0.
+
+Syntax:    
+    y = fft_wf(X)
+    y = fft_wf(X, wf = 'hanning')
+    y = fft_wf(X, axis = 0)
+    y = fft_wf(X, 'hanning',  0)
+Parameters:
+    X:    the data, which is required for determining the output dimensions
+    wf:   the window function name. Valid values are: {'hanning', 'hamming',
+          'bartlett', 'blackman', 'kaiser'}.
+          A different value raises an exception.
+          Default value is 'hanning', which is the best one to force the 
+          'periodicity' of the signal in X.
+    axis: the dimension of X that represents the window size. See comment above.
+Returns:
+    the vector/matrix with the repetitions of the window so the size and shape 
+    matches that of X
+
+FFT related functions:
+    fft_wf
+    fft_fft
+    fft_fft_energy
+    fft_energy
+    
+Related links:
+    http://www.ni.com/white-paper/4844/es/
+    https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.fftpack.fft.html
+    https://docs.scipy.org/doc/numpy-1.10.0/reference/routines.window.html
+        
+    """
+    if wf == 'hanning':
+        if X.ndim == 1:
+            return np.hanning(X.size)#.reshape(X.shape)
+        elif axis == 0:
+            return np.tile(np.hanning(X.shape[0]), reps = [X.shape[1], 1]).T
+        elif axis == 1:
+            return np.tile(np.hanning(X.shape[1]), reps = [X.shape[0], 1])
+    elif wf == 'bartlett':
+        if X.ndim == 1:
+            return np.bartlett(X.size)#.reshape(X.shape)
+        elif axis == 0:
+            return np.tile(np.bartlett(X.shape[0]), reps = [X.shape[1], 1]).T
+        elif axis == 1:
+            return np.tile(np.bartlett(X.shape[1]), reps = [X.shape[0], 1])
+    elif wf == 'blackman':
+        if X.ndim == 1:
+            return np.blackman(X.size)#.reshape(X.shape)
+        elif axis == 0:
+            return np.tile(np.blackman(X.shape[0]), reps = [X.shape[1], 1]).T
+        elif axis == 1:
+            return np.tile(np.blackman(X.shape[1]), reps = [X.shape[0], 1])
+    elif wf == 'hamming':
+        if X.ndim == 1:
+            return np.hamming(X.size)#.reshape(X.shape)
+        elif axis == 0:
+            return np.tile(np.hamming(X.shape[0]), reps = [X.shape[1], 1]).T
+        elif axis == 1:
+            return np.tile(np.hamming(X.shape[1]), reps = [X.shape[0], 1])
+    elif wf == 'kaiser':
+        if X.ndim == 1:
+            return np.kaiser(X.size,  4.65448)#.reshape(X.shape)
+        elif axis == 0:
+            return np.tile(np.kaiser(X.shape[0],  4.65448), reps = [X.shape[1], 1]).T
+        elif axis == 1:
+            return np.tile(np.kaiser(X.shape[1],  4.65448), reps = [X.shape[0], 1])
+    else:
+        name = inspect.getframeinfo(inspect.currentframe())[2]
+        raise Exception(name + ": Invalid name for a numpy window function.");
+
+
+def fft_fft(X, axis = 0):
+    """Fucntion fft_fft
+    Computes the FFT using the scypy.fftpack package.
+
+This is a sort of decorator which assumes that by default your data is arranged in column vectors.    
+
+However, you are free to choose the axis following the python criteria:
+    axis is 0  then the data is arranged in column vectors
+    axis is 1  then the data is arranged in row vectors
+    axis is 2  then your data is a surface with axis 1 and 2...
+    axis is -1 then fft considers the last dimension
+The default value is 0.
+
+Syntax:
+    y = fft_fft(X)
+    y = fft_fft(X, a)
+Parameters:
+    X:     the vecotr/matrix with the data
+    a:     the axis: -1, 0 (default), 1, ...
+Returns:
+    y:     the vector/matrix with the fft coefficients.
+
+FFT related functions:
+    fft_wf
+    fft_fft
+    fft_fft_energy
+    fft_energy
+    
+Related links:
+    http://www.ni.com/white-paper/4844/es/
+    https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.fftpack.fft.html
+    https://docs.scipy.org/doc/numpy-1.10.0/reference/routines.window.html
+        
+    """
+    if X.ndim == 1:
+        return scpyfft.fft(X)
+    else :
+        return scpyfft.fft(X, axis)
+
+
+def fft_fft_energy(X, axis = 0):
+    """Fucntion fft_fft_energy
+    Computes the energy in the frequency domain by computing FFT using the scypy.fftpack package.
+
+This is a sort of decorator which assumes that by default your data is arranged in column vectors.    
+
+However, you are free to choose the axis following the python criteria:
+    axis is 0  then the data is arranged in column vectors
+    axis is 1  then the data is arranged in row vectors
+    axis is 2  then your data is a surface with axis 1 and 2...
+    axis is -1 then fft considers the last dimension
+The default value is 0.
+
+Syntax:
+    y = fft_fft_energy(X)
+    y = fft_fft_energy(X, a)
+Parameters:
+    X:     the vecotr/matrix with the data
+    a:     the axis: -1, 0 (default), 1, ...
+Returns:
+    y:     the sum of the squares of the FFT components along the given axis.
+           all the elements are np.float_
+
+FFT related functions:
+    fft_wf
+    fft_fft
+    fft_fft_energy
+    fft_energy
+    
+Related links:
+    http://www.ni.com/white-paper/4844/es/
+    https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.fftpack.fft.html
+    https://docs.scipy.org/doc/numpy-1.10.0/reference/routines.window.html
+        
+    """
+    f = fft_fft(X, axis)
+    return np.sum(f*np.conj(f), axis, dtype = np.float_)
+    
+
+def fft_energy(f, axis = 0):    
+    """Fucntion fft_energy
+    Computes the energy of the given signals.
+
+This is a sort of decorator which assumes that by default your data is arranged in column vectors.    
+
+However, you are free to choose the axis following the python criteria:
+    axis is 0  then the data is arranged in column vectors
+    axis is 1  then the data is arranged in row vectors
+    axis is 2  then your data is a surface with axis 1 and 2...
+    axis is -1 then fft considers the last dimension
+The default value is 0.
+
+Syntax:
+    y = fft_energy(X)
+    y = fft_energy(X, a)
+Parameters:
+    X:     the vecotr/matrix with the FTT transformation  
+    a:     the axis: -1, 0 (default), 1, ...
+Returns:
+    y:     the sum of the squares of the FFT components along the given axis.
+           all the elements are np.float_
+
+FFT related functions:
+    fft_wf
+    fft_fft
+    fft_fft_energy
+    fft_energy
+    
+Related links:
+    http://www.ni.com/white-paper/4844/es/
+    https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.fftpack.fft.html
+    https://docs.scipy.org/doc/numpy-1.10.0/reference/routines.window.html
+        
+    """
+    return np.sum(f*np.conj(f), axis, dtype = np.float_)
+        
 
 ######################################
 ## Section devoted to filtering
@@ -266,8 +658,8 @@ Extra doc I've used:
     http://mpastell.com/2009/05/11/iir-filter-design-with-python-and-scipy/
     
     """
-    [hpf_b, hpf_a]=ellip_filter_designing(8, 3, 3.5, 0.25, 'highpass')
-    [lpf_b, lpf_a]=ellip_filter_designing(3, 0.1, 100, 0.3, 'lowpass')
+    [hpf_b, hpf_a]=filter_ellip_designing(8, 3, 3.5, 0.25, 'highpass')
+    [lpf_b, lpf_a]=filter_ellip_designing(3, 0.1, 100, 0.3, 'lowpass')
     #these are the initial conditions for each filter: BA-->hpf, G-->lpf
     #they are all initilized to zero.
     orderLow=3 
@@ -338,9 +730,9 @@ Filtering related functions:
     
     """    
     Y = np.zeros(X.shape)
-    zf = np.zeros(zi.shape)
+    zf = np.zeros(Z.shape)
     for i in range(X.shape[1]):
-        Y[:,i],zf[:,i] = filter_filtering_column_wise(X[:,i], num, den, zi[:,i])
+        Y[:,i],zf[:,i] = filter_filtering_column_wise(X[:,i], num, den, Z[:,i])
     return Y,zf
 
 
