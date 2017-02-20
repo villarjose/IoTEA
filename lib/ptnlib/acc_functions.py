@@ -12,6 +12,7 @@ from scipy import signal as scsignal
 import scipy.fftpack as scpyfft
 
 
+    
 ######################################
 ## Section devoted to transformations
 ######################################
@@ -52,7 +53,7 @@ is an array of mx3 -<sma(acc), sma(ba), sma(g)>-.
         name = inspect.getframeinfo(inspect.currentframe())[2]
         raise Exception(name + ": Invalid dimensions of the data array.");
     else:
-        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == axis))
+        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == (1-axis)) )
         if rdim > 3 and rdim < 9:
             name = inspect.getframeinfo(inspect.currentframe())[2]
             raise Exception(name + ": Invalid number of columns of the data array.");#def sma(x):
@@ -61,60 +62,19 @@ is an array of mx3 -<sma(acc), sma(ba), sma(g)>-.
             rlen = max(1, x.shape[axis])
             return r/rlen
         else : #rdim sholud be >=9
-            acc = np.sum(np.abs(x[:,0:3]))
-            ba = np.sum(np.abs(x[:,3:6]))
-            g = np.sum(np.abs(x[:,6:9]))
-            r = np.stack((acc, ba, g)) #np.stack((acc,ba,g),axis=1)
+            if axis == 0:
+                X = x
+            else :
+                X = x.T
+            acc = np.sum(np.abs(X[:,0:3]))
+            ba = np.sum(np.abs(X[:,3:6]))
+            g = np.sum(np.abs(X[:,6:9]))
+            if axis == 0:
+                r = np.stack((acc, ba, g)) #np.stack((acc,ba,g),axis=1)
+            else :
+                r = np.stack((acc, ba, g))
             rlen = max(1, x.shape[axis])
             return r/rlen
-#    """Function sma(x)
-#    Computes the Signal Magnitude Area as the sum of the absolute values of its 
-#    components in each dimension.
-#
-#Sintax:
-#    sma(x)
-#Parameters:
-#    x: a numpy array of dimension mxn, with n in {1, 2, 3} or n>=9
-#Returns:
-#    a numpy vector of dimension 1x1 or 1x3
-#    
-#    
-#For instance,if you have an ACCdf object, you can call sma using the 
-#get_components method:
-#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
-#    >>> sma_a = sma(a.get_components())
-#
-#And if you have an ACC_BA_Gdf object, you can call sma using the get_components 
-#method:
-#    >>> a = ACC_BA_Gdf(myDataFrame) #this is from a accelerometer
-#    >>> sma_a = sma(a.get_components())
-#In this latter case, SMA is computed for the acc, ba, and g components, but not 
-#for the modulus of these accelerations -ACC, BA and G-. Therefore, the output 
-#is an array of mx3 -<sma(acc), sma(ba), sma(g)>-.
-#
-#    """
-#    if x.ndim > 2:
-#        name = inspect.getframeinfo(inspect.currentframe())[2]
-#        raise Exception(name + ": Invalid dimensions of the data array.");
-#    elif x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
-#        r = np.sum(np.abs(x))
-#        rlen = max(1, r.size)
-#        return r / rlen
-#    elif x.shape[1] <= 3: #case of ACCdf 
-#        r = np.sum(np.abs(x),axis=0) # np.fromiter(map(lambda v: sum(abs(v)), x), np.float)
-#        rlen = max(1, x.shape[0])
-#        return np.sum(r)/len(r)
-#    elif x.shape[1] >=9: #case of ACC_BA_Gdf
-#        acc = np.sum(np.abs(x[:,0:3]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,0:3]), np.float)
-#        ba = np.sum(np.abs(x[:,3:6]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,3:6]), np.float)
-#        g = np.sum(np.abs(x[:,6:9]),axis=0) #np.fromiter(map(lambda v: sum(abs(v)), x[:,6:9]), np.float)
-#        
-#        r = np.stack((np.sum(acc), np.sum(ba), np.sum(g))) #np.stack((acc,ba,g),axis=1)
-#        xlen = max(1, x.shape[0])
-#        return r/xlen
-#    else:
-#        name = inspect.getframeinfo(inspect.currentframe())[2]
-#        raise Exception(name + ": Invalid number of columns of the data array.");
 
 
 def aom(x, axis = 0):
