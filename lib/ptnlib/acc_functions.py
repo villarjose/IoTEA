@@ -10,7 +10,7 @@ import pandas as pd
 import inspect
 from scipy import signal as scsignal
 import scipy.fftpack as scpyfft
-
+import matplotlib.pyplot as plt
 
     
 ######################################
@@ -113,65 +113,29 @@ is an array of mx3 -<aom(acc), aom(ba), aom(g)>-.
     elif x.ndim == 1:
         return np.abs(np.max(x) - np.min(x))
     else :
-        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == axis))
+        rdim = np.max(x.shape * (np.linspace(0, x.ndim-1, x.ndim) == (1-axis)))
         if rdim > 3 and rdim < 9:
             name = inspect.getframeinfo(inspect.currentframe())[2]
             raise Exception(name + ": Invalid number of columns of the data array.");
         elif rdim <= 3:
-            return np.sum(np.abs(np.max(x, axis = (1 - axis)) - 
-                                 np.min(x, axis = (1 -axis))))
+            if axis == 0:
+                X = x
+            else:
+                X = x.T
+            Xlen = X.shape[0]
+            return np.sum(np.abs(np.max(X, axis = 0) - 
+                                 np.min(X, axis = 0))) / Xlen
         else : # rdim >= 9!!
-            acc = np.sum(np.abs(np.max(x[:, 0:3], axis = (1 - axis)) - 
-                                np.min(x[:, 0:3], axis = (1 - axis)) ) )
-            ba = np.sum(np.abs(np.max(x[:, 3:6], axis = (1 - axis)) - 
-                               np.min(x[:, 3:6], axis = (1 - axis)) ) )
-            g = np.sum(np.abs(np.max(x[:, 6:9], axis = (1 - axis)) - 
-                              np.min(x[:, 6:9], axis = (1 - axis)) ) )
-            return np.stack((acc,ba,g))
+            if axis == 0:
+                X = x
+            else: 
+                X = x.T
+            Xlen = X.shape[0]
+            acc = np.sum(np.abs(np.max(X[:, 0:3], axis = 0) - np.min(X[:, 0:3], axis = 0) ) )
+            ba = np.sum(np.abs(np.max(X[:, 3:6], axis = 0) - np.min(X[:, 3:6], axis = 0) ) )
+            g = np.sum(np.abs(np.max(X[:, 6:9], axis = 0) - np.min(X[:, 6:9], axis = 0) ) )
+            return np.stack((acc,ba,g))/Xlen
 
-#    """Function aom(x)
-#    Computes the Amount of Movement as the sum of the differences between
-#the maximum and the minimum values in the different axis of a sample.    
-#
-#Sintax:
-#    aom(x)
-#Parameters:
-#    x: a numpy array of dimension mxn, with n in {2, 3} or n>=9
-#Returns:
-#    a numpy vector of dimension 1x1 or 1x3
-#    
-#    
-#For instance,if you have an ACCdf object, you can call aom using the 
-#get_components method:
-#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
-#    >>> aom_a = aom(a.get_components())
-#    
-#And if you have an ACC_BA_Gdf object, you can call aom using the get_components 
-#method:
-#    >>> a = ACC_BA_Gdf(myDataFrame) #this is from a accelerometer
-#    >>> aom_a = aom(a.get_components())
-#In this latter case, AoM is computed for the acc, ba, and g components, but not 
-#for the modulus of these accelerations -ACC, BA and G-. Therefore, the output 
-#is an array of mx3 -<aom(acc), aom(ba), aom(g)>-.
-#
-#    """
-#    if x.ndim > 2:
-#        name = inspect.getframeinfo(inspect.currentframe())[2]
-#        raise Exception(name + ": Invalid dimensions of the data array.");
-#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) : #case of a vector
-#        r = np.abs(np.max(x, axis=0) - np.min(x, axis=0))
-#        return np.sum(r)                                #yes, it is a 0.0 !!!!
-#    if x.shape[1] <= 3: #case of ACCdf
-#        r = np.abs(np.max(x, axis=1) - np.min(x, axis=1))
-#        return np.sum(r)
-#    elif x.shape[1] >=9: #case of ACC_BA_Gdf
-#        acc = np.sum(np.abs(np.max(x[:, 0:3], axis=1) - np.min(x[:, 0:3], axis=1)))
-#        ba = np.sum(np.abs(np.max(x[:, 3:6], axis=1) - np.min(x[:, 3:6], axis=1)))
-#        g = np.sum(np.abs(np.max(x[:, 6:9], axis=1) - np.min(x[:, 6:9], axis=1)))
-#        return np.stack((acc,ba,g)) #,axis=1)
-#    else:
-#        name = inspect.getframeinfo(inspect.currentframe())[2]
-#        raise Exception(name + ": Invalid number of columns of the data array.");
 
         
 def time_between_peaks(x, n = 2, K = 0.9, axis = 0):
@@ -217,103 +181,38 @@ get_components method:
     elif x.ndim == 1:
         m = np.mean(x)
         s = np.std(x)
-        r = x > (m + 0.9 * s)
-        R = r[1:] ^ r[0:-1]
+        r = np.array(x > (m + 0.9 * s), dtype = np.float_)
+        R = r[1:] - r[0:-1]
         ncolumns = 1
         tbpks = np.zeros(ncolumns)
-        A=np.arange(0,R.shape[0])[R==True]
+        A=np.arange(0,R.shape[0])[R==1]
         if A.size > n:
             tdif = A[1:] - A[0:-1]    
             tbpks[0] = np.sum(tdif) / (A.size-1)
         return tbpks
     else :
-        m = np.mean(x, axis = axis)
-        s = np.std(x, axis = axis)
-        r = x > (m + 0.9 * s)
         if axis == 0:
-            R = r[1:, :] ^ r[0:-1, :]
-        else:
-            R = r[:, 1:] ^ r[:, 0:-1]
-        nvars = x.shape[1 - axis]
+            X = x
+        else :
+            X = x.T    
+        m = np.mean(X, axis = 0)
+        s = np.std(X, axis = 0)
+        r =  np.array(X > (m + 0.9 * s), dtype = np.float_) 
+        R = r[1:, :] - r[0:-1, :] 
+        nvars = X.shape[1]
         tbpks = np.zeros(nvars)
         for c in range(nvars):
-            if axis == 0:
-                A=np.arange(0,R.shape[axis])[R[:,c]==True]
-            else:
-                A=np.arange(0,R.shape[axis])[R[c,:]==True]
+            A=np.arange(0,R.shape[0])[R[:,c]==1]
             if A.size < n:
                 continue
             else :    
                 tdif = A[1:] - A[0:-1]    
                 tbpks[c] = np.sum(tdif) / (A.size-1)
-                #print(str(c)+': ', A, tdif)
         return tbpks
-        
-
-#    """Function time_between_peaks(x)
-#    Computes the time-between-peaks as stated in 
-#   GENERALIZED MODELS FOR THE CLASSIFICATION OF ABNORMAL MOVEMENTS IN DAILY LIFE 
-#   AND ITS APPLICABILITY TO EPILEPSY CONVULSION RECOGNITION; Jose R. Villar, 
-#   Paula Vergara, Manuel Menendez, Enrique de la Cal, Victor M. Gonzalez and
-#   Javier Sedano; International Journal of Neural Systems.
-#
-#The algorithm is:
-#   1.- Find the sequences with value higher than mean+K*std within the window,
-#   we use K set to 0.9 as default.
-#   2.- Keep the rising points from each of these sequences
-#   3.- Measure the mean time between them.
-#
-#Sintax:
-#    time_between_peaks(x)
-#    time_between_peaks(x, 2)
-#    time_between_peaks(x, n = 2, K = 0.9)
-#Parameters:
-#    x: a numpy array of dimension mxn, n is the number of features to analyze
-#    n: the minimum numer of peaks to detect
-#    K: the constant for computing the threshold
-#Returns:
-#    a numpy vector of dimension 1xn  with the time-between-peaks for each column.
-#    
-#    
-#For instance,if you have an ACCdf object, you can call time-between-peaks using the 
-#get_components method:
-#    >>> a = ACCdf(myDataFrame) #this is from a accelerometer
-#    >>> tbpks_a = time_between_peaks(a.get_components())
-#    
-#
-#    """
-#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
-#        m = np.mean(x)
-#        s = np.std(x)
-#        r = x > (m + 0.9 * s)
-#        R = r[1:] ^ r[0:-1]
-#        ncolumns = 1
-#        tbpks = np.zeros(ncolumns)
-#        A=np.arange(0,R.shape[0])[R==True]
-#        if A.size > n:
-#            tdif = A[1:] - A[0:-1]    
-#            tbpks[0] = np.sum(tdif) / (A.size-1)
-#            #print(str(c)+': ', A, tdif)
-#    else:
-#        m = np.mean(x, axis = 0)
-#        s = np.std(x, axis = 0)
-#        r = x > (m + 0.9 * s)
-#        R = r[1:, :] ^ r[0:-1, :]
-#        ncolumns = x.shape[1]
-#        tbpks = np.zeros(ncolumns)
-#        for c in range(ncolumns):
-#            A=np.arange(0,R.shape[0])[R[:,c]==True]
-#            if A.size < n:
-#                continue
-#            else :    
-#                tdif = A[1:] - A[0:-1]    
-#                tbpks[c] = np.sum(tdif) / (A.size-1)
-#                #print(str(c)+': ', A, tdif)
-#    return tbpks
 
 
 def sum_absolute_values(x, axis = 0):
-    """Function time_between_peaks(x)
+    """Function sum_absolute_values(x)
     Computes the sum of the absolute values for each feature in the array.
 
 Sintax:
@@ -339,14 +238,10 @@ get_components method:
         name = inspect.getframeinfo(inspect.currentframe())[2]
         raise Exception(name + ": Invalid dimensions of the data array.");
     elif x.ndim == 1:
-        return np.um(np.abs(x))
+        return np.sum(np.abs(x))
     else: 
         return np.sum(np.abs(x),axis=axis)
-#    if x.ndim == 1 or (x.ndim == 2 and x.shape[0]==1) :
-#        na = 1
-#    else: 
-#        na = 0
-#    return np.sum(np.abs(x),axis=na)
+
 
 
 
@@ -554,12 +449,12 @@ Related links:
 ######################################
 ## Section devoted to filtering
 ######################################
-def filter_ellip_designing(n=3,Rp=1.0,Rs=80.0, wn=0.25,tpe='lowpass'):
-    """Function filter_ellip_designing
+def filter_ellip_design(n=3,Rp=1.0,Rs=80.0, wn=0.25,tpe='lowpass'):
+    """Function filter_ellip_design
     Creates an elliptical filter for the set of given parameters. This is rather specific to this project.
 
 Syntax:
-    filter_ellip_designing(n=3,Rp=1,Rs=80, wn=0.25,tpe='lowpass')
+    filter_ellip_design(n=3,Rp=1,Rs=80, wn=0.25,tpe='lowpass')
 Parameters:
     The parameters follow the statements publish at https://docs.scipy.org/doc/scipy-0.18.1/reference/generated/scipy.signal.ellip.html
     n:      the order of the filter
@@ -574,10 +469,10 @@ Returns:
 
 
 Example of use:
-    >>>  n,d = filter_ellip_designing(8, 3.0, 3.5, 0.25, 'highpass')
+    >>>  n,d = filter_ellip_design(8, 3.0, 3.5, 0.25, 'highpass')
 
 Filtering related functions:
-    filter_ellip_designing
+    filter_ellip_design
     filter_acc_create_filters
     filter_filtering_column_wise
     filter_acc_component_filtering
@@ -609,7 +504,7 @@ Returns:
     g_order:  the order of the G lowpass filter
     
 Filtering related functions:
-    filter_ellip_designing
+    filter_ellip_design
     filter_acc_create_filters
     filter_filtering_column_wise
     filter_acc_component_filtering
@@ -618,8 +513,8 @@ Extra doc I've used:
     http://mpastell.com/2009/05/11/iir-filter-design-with-python-and-scipy/
     
     """
-    [hpf_b, hpf_a]=filter_ellip_designing(8, 3, 3.5, 0.25, 'highpass')
-    [lpf_b, lpf_a]=filter_ellip_designing(3, 0.1, 100, 0.3, 'lowpass')
+    [hpf_b, hpf_a]=filter_ellip_design(8, 3, 3.5, 0.25, 'highpass')
+    [lpf_b, lpf_a]=filter_ellip_design(3, 0.1, 100, 0.3, 'lowpass')
     #these are the initial conditions for each filter: BA-->hpf, G-->lpf
     #they are all initilized to zero.
     orderLow=3 
@@ -647,7 +542,7 @@ Returns:
     zf:    the next call's initial conditions
     
 Filtering related functions:
-    filter_ellip_designing
+    filter_ellip_design
     filter_acc_create_filters
     filter_filtering_column_wise
     filter_acc_component_filtering
@@ -683,7 +578,7 @@ Returns:
     zf:    the next call's initial conditions, one column per column in x
     
 Filtering related functions:
-    filter_ellip_designing
+    filter_ellip_design
     filter_acc_create_filters
     filter_filtering_column_wise
     filter_acc_component_filtering
@@ -697,3 +592,17 @@ Filtering related functions:
 
 
 
+
+def main():
+    pass
+
+if __name__ == '__main__':
+    x = np.random.random((32,3))
+    X = np.random.random((32,12))
+    XT = X.T
+    xt = x.T
+    q = np.tile(x,reps=3)
+    
+    time_between_peaks(x)
+    
+    main()
