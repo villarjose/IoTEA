@@ -1,4 +1,7 @@
 #references:
+# Matrices and Factors:
+#    https://www.programiz.com/r-programming/data-frame
+#    https://www.programiz.com/r-programming/factor
 # R and MySQL:
 #    https://www.r-bloggers.com/accessing-mysql-through-r/
 #    https://www.r-bloggers.com/connecting-r-to-mysqlmariadb/
