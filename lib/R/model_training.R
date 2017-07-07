@@ -3,7 +3,11 @@
 #    https://www.r-bloggers.com/accessing-mysql-through-r/
 #    https://www.r-bloggers.com/connecting-r-to-mysqlmariadb/
 #    https://cran.r-project.org/web/packages/RMySQL/
-
+#SVM:
+#    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
+#    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
+#    https://eight2late.wordpress.com/2017/02/07/a-gentle-introduction-to-support-vector-machines-using-r/
+#    https://www.r-bloggers.com/learning-kernels-svm/
 
 
 #createtable(profile, idprofile:<int,PK>, label:<text50,REQUIRED>)
@@ -13,7 +17,8 @@
 # 2, Walking stick, crutch or crutches, etc
 # 3, Cognitive impairment
 
-#createtable(activity, idactivity:<int,PK>, label:<text50,REQUIRED>, isa:<int,can be empty>)
+#createtable(activity, idactivity:<text100,PK>, label:<text50,REQUIRED>, 
+#            isa:<int,can be empty>)
 #insert:
 # 1.0.0, Resting
 #   1.1.0, Lying, 1.0.0
@@ -37,12 +42,20 @@
 #     3.2.2, Stairs up, 3.1.0
 #     3.2.3, Going down a ramp, 3.1.0
 
-#createtable(similar_activities, < idact1:<int,FK>, idact2<int,FK>, idprofile:<int,FK> >:<PK>)
-#insert
-# to be determined after visualization of the data
+#createtable(activity_distances, < idact1:<int,FK>, idact2<int,FK>, idprofile:<int,FK>, 
+#                                  idparticipant:<int,FK>>:<PK>, q25:<float>,
+#                                 q50:<float>, q75:<float>)
+#the similarities between two activities might not be simmetrical
+#idact1 is the activity to compare with idact2
 
 
-#createtable(sliding_window, < idact1:<int,FK>, idprofile:<int,FK>, idparticipant:<int,FK,might be empty>:<PK>, windowsize:<int, positive>, shift:<int, positive>)
+
+#createtable(sliding_window, < idact1:<int,FK>, idprofile:<int,FK>, 
+#                              idparticipant:<int,FK,might be empty>:<PK>, 
+#                              windowsize:<int, positive>, shift:<int, positive>)
+
+
+
 
 
 # Para el caso de usar un profile concreto...
@@ -53,12 +66,10 @@
 #   main_act <- activity to learn
 #   main_profile <- main characteristic profile of the participant
 #   participant <- id del participante, < 0 si es para toda la poblacion
-#   comparar_actividades=0 <- 1 si se desea rellenar la tabla similar_activities, 0 en caso contrario
 #   
 # Acciones:
 #   window <- obtener datos de ventana para main_act, main_profile, participant
-#   if comparar_actividades==1
-#       analizar_compatibilidades(main_act, main_profile, participant, window)
+#   distances <- HARgetActivitySimilarities(connect, main_act, main_profile, participant)
 #   P_data <- empty data.frame
 #   nd <- recopilar datos actividad main_act
 #   tramos <- segmentar nd por tramos no consecutivos en el tiempo
@@ -101,14 +112,110 @@
 
 library(RMySQL)
 
-HARgetAllActivities <- function(conn, level=-1) {
-  res <- dbSendQuery(conn, "select idactivity, label from activity")
-  ans <- data.frame()
+HARgetAllActivities <- function(connect, level=3) {
+  if (level < 0) { 
+    sqlstm <- "select idactivity, label from activity; " 
+  }
+  else if (level == 0) { 
+    sqlstm <- "select idactivity, label from activity; " 
+  }
+  else if (level == 1) { 
+    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[1-9][0-9]%.0.0'; "
+  }
+  else if (level == 2) {
+    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[0-9]%.[1-9][0-9]%.0'; "
+  }
+  else if (level == 3) {
+    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[0-9]%.[0-9]%.[1-9][0-9]%'; "
+  }
+  res <- dbGetQuery(connect, sqlstm)
+}
+
+#tmp <- sprintf("SELECT * FROM emp WHERE lname = %s", "O'Reilly")
+#dbEscapeStrings(con, tmp)
+#sql <- sprintf("insert into networks
+#                  (species_id, name, data_source, description, created_at)
+#               values (%d, '%s', '%s', '%s', NOW());",
+#               species.id, network.name, data.source, description)
+#rs <- dbSendQuery(con, sql)
+#dbClearResult(rs)
+
+HARcomputeActivitySimilarities(connect, idactivity, idprofile=-1, idparticipant=-1 ) {
+  sqlstm <- paste('select * from ACC_DATA where idactivity =', idactivity)
+  if (profile != -1) {
+    sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
+  }
+  if (idparticipant != -1) {
+    sqlstm <- paste(sqlstm, 'and', 'idparticipant =', toString(idparticipant))
+  }
+  sqlstm <- paste(sqlstm, ";")
+  actdata <- dbGetQuery(connect, sqlstm)
+  ns <- nrow(actdata)
+  
+  acts <- HARgetAllActivities(connect, 3)
+  acts <- acts[, 'idactivity']
+  acts <- acts[acts!=idactivity]
+  
+  sims <- data.frame()
+  for( idact in acts) {
+    eudist <- data.frame()
+    sqlstm <- paste('select * from ACC_DATA where idactivity =', idact, ";")
+    idactdata <- dbGetQuery(connect, sqlstm)
+    whole <- rbind(actdata,idactdata)
+    dm <- as.matrix(dist(whole, method = 'euclidean'))
+    l = nrow(dm)
+    dm <- dm[(ns+1):l, 1:ns]
+    sims <- rbind(sims, quantile(matrix(dm,nrow=1))[2:4])
+  }
+  rownames(sims) <- acts
+  colnames(sims) <- c("q25", "q50", "q75")
+  return(sims)
+}
+
+
+HARsetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = -1, 
+                           sims = NULL) {
+  if (is.null(sims)) {
+    return(-1)
+  }
+  basesql <- paste("insert into activity_distances",
+                  "(idact1, idact2, idprofile, idparticipant, q25, q50, q75)",
+                  "values (%d, %d, %d, %d, %f, %f, %f);" )
+  rns <- rownames(sims)
+  for( r in rns) {
+    sqlstm <- sprintf(basesql, idactivity, r, idprofile, idparticipant, 
+                      sims[r,1], sims[r,2], sims[r,3])
+    res <- dbGetQuery(sqlstm)
+  }
+  return(0)
+}
+
+HARgetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = -1) {
+  sqlstm <- paste('select idact2, q25, q50, q75 from activity_distances where idactivity =', idactivity)
+  if (profile != -1) {
+    sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
+  }
+  if (idparticipant != -1) {
+    sqlstm <- paste(sqlstm, 'and', 'idparticipant =', toString(idparticipant))
+  }
+  sqlstm <- paste(sqlstm, ';')
+  actdata <- dbGetQuery(connect, sqlstm)
+  if (nrow(actdata) == 0) {
+    ans <- HARcomputeActivitySimilarities(connect, idactivity, idprofile, idparticipant)
+    return(ans)
+  }
+  else {
+    nms <- actdata[,1]
+    ans <- actdata[,2:4]
+    rownames(ans) <- nms
+    colnames(ans) <- c("q25", "q50", "q75")
+    return(ans)
+  }
 }
 
 
 ModelLearningInterface <- function() {
-  conn <- dbConnect(MySQL(), user='user', password='password', dbname='database_name', host='host')
+  connect <- dbConnect(MySQL(), user='user', password='password', dbname='database_name', host='host')
   activs<- HARgetAllActivities(conn)  
   
   
