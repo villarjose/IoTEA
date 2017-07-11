@@ -6,6 +6,8 @@
 #    https://www.r-bloggers.com/accessing-mysql-through-r/
 #    https://www.r-bloggers.com/connecting-r-to-mysqlmariadb/
 #    https://cran.r-project.org/web/packages/RMySQL/
+#    para bigint!!!
+#    https://stackoverflow.com/questions/3241748/using-rmysqls-dbgetquery-in-r-how-do-i-coerce-string-data-type-on-the-result-s
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
 #    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
@@ -20,14 +22,17 @@
 # 2, Walking stick, crutch or crutches, etc
 # 3, Cognitive impairment
 
-#createtable(activity, idactivity:<text100,PK>, label:<text50,REQUIRED>, 
+#createtable(activity, idactivity:<text11,PK>, label:<text50,REQUIRED>, 
 #            isa:<int,can be empty>)
+#  11 viene de tres dígitos para cada nivel + dos puntos.
 #insert:
 # 1.0.0, Resting
 #   1.1.0, Lying, 1.0.0
 #     1.1.1, Sleeping, 1.1.0
 #     1.1.2, Resting, 1.1.0
 #   1.2.0, Sitting, 1.0.0
+#     1.2.1, Sleeping, 1.3.0
+#     1.3.2, Resting, 1.3.0
 # 2.0.0, Transition
 #   2.1.0, Getting up, 2.0.0
 #     2.1.1, Uprise from a bed, 2.1.0
@@ -143,7 +148,20 @@ HARgetAllActivities <- function(connect, level=3) {
 #rs <- dbSendQuery(con, sql)
 #dbClearResult(rs)
 
-HARcomputeActivitySimilarities(connect, idactivity, idprofile=-1, idparticipant=-1 ) {
+
+
+#------------------------------------------------------------------------------
+# HARcomputeActivitySimilarities
+#------------------------------------------------------------------------------
+#Input:
+#   connect       acceso a la base de datos
+#   idactivity    actividad para la que se almacenan las similitudes
+#   idprofile     profile para la que se almacena, -1 si no se indica
+#   idparticipant sujeto para la que se almacena, -1 si no se indica
+#Output:
+#   una matriz de similitudes, pares <idactivity, <q25, q50, q75> >
+#
+HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, idparticipant=-1 ) {
   sqlstm <- paste('select * from ACC_DATA where idactivity =', idactivity)
   if (profile != -1) {
     sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
@@ -176,7 +194,19 @@ HARcomputeActivitySimilarities(connect, idactivity, idprofile=-1, idparticipant=
 }
 
 
-HARsetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = -1, 
+#------------------------------------------------------------------------------
+# HARsetActivitySimilarities
+#------------------------------------------------------------------------------
+#Esta función actualiza en la base de datos las similitudes de una actividad 
+#con el resto de actividades del mismo contexto (idprofile, idparticipant)
+#Input:
+#   connect       acceso a la base de datos
+#   idactivity    actividad para la que se almacenan las similitudes
+#   idprofile     profile para la que se almacena, -1 si no se indica
+#   idparticipant sujeto para la que se almacena, -1 si no se indica
+#   sims          matriz de similitudes. Si NULL no se hace nada.
+#
+HARsetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idparticipant = -1, 
                            sims = NULL) {
   if (is.null(sims)) {
     return(-1)
@@ -193,7 +223,22 @@ HARsetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = 
   return(0)
 }
 
-HARgetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = -1) {
+#------------------------------------------------------------------------------
+# HARgetActivitySimilarities
+#------------------------------------------------------------------------------
+#Esta funcion usa la base de datos y recupar las actividades similares a la 
+#actual en el mismo contexto (profile y participante, si estan dados).
+#Input:
+#  connect     conexion a la base de datos
+#  idactivity  actividad para la que se recuperan las actividades similares
+#  idprofile   profile para el que se buscan las actividades similares, -1 si no
+#              se desea especificar este valor
+#  idparticipant   sujeto para el que se buscan las actividades similares, -1 si 
+#              no se desea especificar este valor
+#Output:
+#  ans     listado de actividades similares, con idactivity, y los 3 cuartiles.
+#
+HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idparticipant = -1) {
   sqlstm <- paste('select idact2, q25, q50, q75 from activity_distances where idactivity =', idactivity)
   if (profile != -1) {
     sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
@@ -214,6 +259,117 @@ HARgetActivitySimilarities(connect, idactivity, idprofile = -1, idparticipant = 
     colnames(ans) <- c("q25", "q50", "q75")
     return(ans)
   }
+}
+
+
+
+#------------------------------------------------------------------------------
+# HARsplitIntoTS
+#------------------------------------------------------------------------------
+#This function receives a dataframe with timestamps and the raw data (3DACC+HR),
+#and generates a list of TS, spliting them when there are big differences in the
+#timestamps
+#Input:
+#   df       the dataframe with all the data
+#Output:
+#   ans      a list with dataframes, one per TS
+#
+HARsplitIntoTS <- function(df) {
+  timedif <- df[3:nrow(df), 1] - df[2:(nrow(df)-1), 1] > 
+                1.2 * df[2:(nrow(df)-1), 1] - df[1:(nrow(df)-2), 1]
+  positions <- which(timedif %in% TRUE)
+  p = 1
+  nTS <- list()
+  p1 = 1
+  while (p <= length(positions)){
+    nTS[[p]] <- df[p1:positions[p],]
+    p1 <- positions[p]
+    p <- p + 1
+  }
+  return(nTS)
+}
+
+
+#------------------------------------------------------------------------------
+# HARrequestAllACCHRData
+#------------------------------------------------------------------------------
+#This function returns a dataframe with all the data for a pair <participant, 
+#activity> from the database
+#Input:
+#  connect     conexion a la base de datos
+#  idactivity  actividad para la que se recuperan las actividades similares
+#  idparticipant   sujeto para el que se buscan las actividades similares, -1 si 
+#              no se desea especificar este valor
+#Output:
+#  df          dataframe con los datos pedidos
+#
+HARrequestAllACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
+  if (idactivity == "0.0.0") {
+    sqlstm <- paste("select * from ACC_HR where id = ", idparticipant,sep='')
+    df <- dbGetQuery(sqlstm)
+  }
+  else {
+    sqlstm <- paste("select * from ACC_HR where id = ", idparticipant,
+                    " and Actividad=",idactivity,sep='')
+    df <- dbGetQuery(sqlstm)
+  }
+  return(df)
+}
+
+
+
+#------------------------------------------------------------------------------
+# HARcomputeSMA(df, ws, shift)
+#------------------------------------------------------------------------------
+#Esta funcion calcula SMA de un data.frame con accx,accy,accz. A sliding window 
+#is performed on the data.
+#Input:
+#  d      vector de tres coordanadas x,y,z
+#  ws     the sliding window size
+#  shift  the shift used for the sliding window
+#Output:
+#  SMA calculado
+#
+sma <- function(d) {
+  if (nrow(d) == 0) { return(0) }
+  r <- sum(abs(d)) / nrow(d)
+  return(r)
+}
+
+HARcomputeSMA <- function(df, ws, shift){
+  b <- seq(ws, nrow(df), shift)
+  a <- seq(1, nrow(df) -shift, shift)
+  a <- a[1:nrow(b)]
+  r <- apply(data.frame(a, b), MARGIN=1,
+        function(x) sma(df[x[1]:x[2],]))
+  return(r)
+}
+
+
+#------------------------------------------------------------------------------
+# HARcomputeAoM(df, ws, shift)
+#------------------------------------------------------------------------------
+#Esta funcion calcula AoM de un vector con accx,accy,accz. A sliding window 
+#is performed on the data.
+#Input:
+#  d      vector de tres coordanadas x,y,z
+#  ws     the sliding window size
+#  shift  the shift used for the sliding window
+#Output:
+#  AoM calculado
+#
+aom <- function(d) {
+  D <- abs(d)
+  r <- sum(apply(d, 1, max) - apply(d, 1, min))
+  return(r)
+}
+HARcomputeAoM <- function(df, ws, shift) {
+  b <- seq(ws, nrow(df), shift)
+  a <- seq(1, nrow(df) -shift, shift)
+  a <- a[1:nrow(b)]
+  r <- apply(data.frame(a, b), MARGIN=1,
+        function(x) aom(df[x[1]:x[2],]))
+  return(r)
 }
 
 
