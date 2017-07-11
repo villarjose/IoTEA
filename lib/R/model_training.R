@@ -373,6 +373,41 @@ HARcomputeAoM <- function(df, ws, shift) {
 }
 
 
+#------------------------------------------------------------------------------
+# HARcomputeTBP(df, ws, shift, K)
+#------------------------------------------------------------------------------
+#Esta funcion calcula Time between Peaks de un vector con accx,accy,accz. A 
+#sliding window is performed on the data.
+#Input:
+#  d      vector de tres coordanadas x,y,z
+#  ws     the sliding window size
+#  shift  the shift used for the sliding window
+#  K      the deviation multiplier to detect the peak, default value is 0.9
+#Output:
+#  TBP calculado
+#
+tbp <- function(d, K=0.9){
+  a <- apply(data.frame(apply(df^2,1,sum)),1,sqrt)
+  b <- c(a > (mean(a) + K * sd(a)))
+  e <- c(0, diff(b,1) > 0) #el primer 0 es porque diff tiene una dimension menos
+  #                         que b.
+  f <- c(0, which(c(0,diff(c,1)>0) %in% 1)) #idem de lo mismo
+  g <- mean(diff(f))
+  return(g)
+}
+
+HARcomputeTBP <- function(df, ws, shift, K=0.9) {
+  b <- seq(ws, nrow(df), shift)
+  a <- seq(1, nrow(df) -shift, shift)
+  a <- a[1:nrow(b)]
+  r <- apply(data.frame(a, b), MARGIN=1,
+             function(x) tbp(df[x[1]:x[2],], K))
+  return(r)
+}
+
+
+
+
 ModelLearningInterface <- function() {
   connect <- dbConnect(MySQL(), user='user', password='password', dbname='database_name', host='host')
   activs<- HARgetAllActivities(conn)  
