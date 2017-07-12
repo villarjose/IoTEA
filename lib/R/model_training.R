@@ -8,6 +8,7 @@
 #    https://cran.r-project.org/web/packages/RMySQL/
 #    para bigint!!!
 #    https://stackoverflow.com/questions/3241748/using-rmysqls-dbgetquery-in-r-how-do-i-coerce-string-data-type-on-the-result-s
+#    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
 #    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
@@ -407,9 +408,24 @@ HARcomputeTBP <- function(df, ws, shift, K=0.9) {
 
 
 
+HARcreateEllipFilter <- function(n, Rs, Rp, W, type='high', plane='z') {
+  a <- ellip(n, Rs, Rp, W, type, plane)
+  return(a)
+}
+
+HARapplyEllipFilter <- function(filt, ts){
+  x <- as.matrix(ts)
+  if (is.list(filt)) {  initSize <- length(filt$b) -1 }
+  else { initSize <- length(filt) }
+  initState <- matrix(rep(apply(x, 2, mean), initSize), nrow=initSize, byrow=TRUE)
+  y <- signal::filter(filt, x, init=initState)
+}
+
+
 
 #crear filtro:
 #[hpf_b, hpf_a]=filter_ellip_design(8, 3, 3.5, 0.25, 'highpass')
+#     scsignal.ellip(N=n, rs=Rs, rp=Rp, Wn=wn, btype=tpe, analog=False, output='ba')
 #[lpf_b, lpf_a]=filter_ellip_design(3, 0.1, 100, 0.3, 'lowpass')
 ##these are the initial conditions for each filter: BA-->hpf, G-->lpf
 ##they are all initilized to zero.
