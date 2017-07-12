@@ -387,7 +387,7 @@ HARcomputeAoM <- function(df, ws, shift) {
 #  TBP calculado
 #
 tbp <- function(d, K=0.9){
-  a <- apply(data.frame(apply(df^2,1,sum)),1,sqrt)
+  a <- apply(data.frame(apply(df^2,1,sum)),1,sqrt) #modulo de los 3 ejes
   b <- c(a > (mean(a) + K * sd(a)))
   e <- c(0, diff(b,1) > 0) #el primer 0 es porque diff tiene una dimension menos
   #                         que b.
@@ -408,13 +408,43 @@ HARcomputeTBP <- function(df, ws, shift, K=0.9) {
 
 
 
+#crear filtro:
+#[hpf_b, hpf_a]=filter_ellip_design(8, 3, 3.5, 0.25, 'highpass')
+#[lpf_b, lpf_a]=filter_ellip_design(3, 0.1, 100, 0.3, 'lowpass')
+##these are the initial conditions for each filter: BA-->hpf, G-->lpf
+##they are all initilized to zero.
+#orderLow=3 
+#orderHigh=8
+#hpf_ba_zi = scsignal.lfilter_zi(hpf_b, hpf_a) 
+#lpf_g_zi = scsignal.lfilter_zi(lpf_b, lpf_a) 
+#hpf_ba_zi = np.tile(hpf_ba_zi.reshape(-1,1), [1, 3]) #one per axis!
+#lpf_g_zi = np.tile(lpf_g_zi.reshape(-1,1), [1, 3])
+#return (hpf_b, hpf_a, hpf_ba_zi, lpf_b, lpf_a, lpf_g_zi, orderLow, orderHigh)
+
+#def filter_filtering_column_wise(x, num, den, z):
+#  y, zf = scsignal.lfilter(num, den, x, axis=-1, zi=z*x[0])
+#return y, zf
+
+#def filter_acc_component_filtering(X, num, den, Z):Y = np.zeros(X.shape)
+#zf = np.zeros(Z.shape)
+#for i in range(X.shape[1]):
+#  Y[:,i],zf[:,i] = filter_filtering_column_wise(X[:,i], num, den, Z[:,i])
+#return Y,zf
+
+
+
+
+
 ModelLearningInterface <- function() {
-  connect <- dbConnect(MySQL(), user='user', password='password', dbname='database_name', host='host')
-  activs<- HARgetAllActivities(conn)  
+  connect <- dbConnect(MySQL(), user='essy', password='Papatolati666', 
+                       dbname='ESSYDB', host='156.35.22.10')
+  activs<- HARgetAllActivities(connect)  
   
   
   dbDisconnect(conn)
 }
+
+
 
 
 

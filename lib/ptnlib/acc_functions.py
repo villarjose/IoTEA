@@ -6,11 +6,11 @@ Created on Fri Jan 27 11:28:15 2017
 @author: villarjose
 """
 import numpy as np
-import pandas as pd
+#import pandas as pd
 import inspect
 from scipy import signal as scsignal
 import scipy.fftpack as scpyfft
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
     
 ######################################

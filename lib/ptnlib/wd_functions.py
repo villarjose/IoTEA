@@ -8,11 +8,16 @@ Created on Thu Feb 23 09:24:45 2017
 
 
 import numpy as np
-import pandas as pd
+#import pandas as pd
 import inspect
-from scipy import signal as scsignal
-import scipy.fftpack as scpyfft
-import matplotlib.pyplot as plt
+#from scipy import signal as scsignal
+#import scipy.fftpack as scpyfft
+#import matplotlib.pyplot as plt
+
+###############################################################################
+# G E T T I N G   T H E   W R I S T   W H E R E   T H E   W D   I S   
+# P L A C E D   O N
+###############################################################################
 
 def wd_wrist_identification(guv, currentg, weight=0.9):
     """returns if the current gravity components (currentg) follows the gravity 
@@ -198,7 +203,66 @@ Related functions:
         return 0
         
         
+        
+        
+###############################################################################
+# G E T T I N G   T H E   W R I S T   O R I E N T A T I O N
+###############################################################################
+
+def wo_close_to_horizontal_palm_up(cg, guv, span = 0.20):
+    pass
+
+def wo_close_to_horizontal_palm_down(cg, guv, span = 0.20):
+    pass
+
+def wo_close_to_horizontal_palm_sideways_in(cg, guv, span = 0.20):
+    pass
+
+def wo_close_to_horizontal_palm_sideways_out(cg, guv, span = 0.20):
+    pass
+
+def wo_close_to_vertical_up(cg, guv, span = 0.20):
+    pass        
+
+def wo_close_to_vertical_down(cg, guv, span = 0.20):
+    pass        
+
+def wo_close_to_leaning_palm_up(cg, guv, span = 0.20):
+    pass        
+
+def wo_close_to_leaning_palm_down(cg, guv, span = 0.20):
+    pass        
+
+def wo_close_to_leaning_palm_sideways_in(cg, guv, span = 0.20):
+    pass
+
+def wo_close_to_leaning_palm_sideways_out(cg, guv, span = 0.20):
+    pass
+
+def wo_wrist_moving_upwards(cba, cg, guv, span = 0.20):
+    pass
+
+def wo_wrist_moving_downwards(cba, cg, guv, span = 0.20):
+    pass
+
+def wo_wrist_moving_closer_to_the_body(cba, cg, guv, span = 0.20):
+    pass
+
+def wo_wrist_moving_sideways_out_the_body(cba, cg, guv, span = 0.20):
+    pass
     
+def wo_wrist_moving_forward_the_body(cba, cg, guv, span = 0.20):
+    pass
+
+def wo_wrist_moving_backward_the_body(cba, cg, guv, span = 0.20):
+    pass
+
+def wo_axis_rotation(cba, cg, guv):
+    pass
+
+
+
+
 if __name__=='__main__':
     g = np.random.random(3)
     cg = np.random.random(3)
