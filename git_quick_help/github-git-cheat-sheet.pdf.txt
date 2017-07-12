@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jan 27 08:48:56 2017
+
+@author: ec1cgi
+"""
+#Take a look to:
+http://rogerdudler.github.io/git-guide/
+
+
+#guide to git
+#en adelante, proyecto y repositorio es lo mismo
+
+#descripcion del proyecto
+archivo README.md en el raiz del repositorio.
+observar también la licencia, si disponible.
+
+#crear repositorio:
+git init project_name
+
+#mostrar el estado del proyecto:
+git status
+
+#agnadir archivo o directorio al proyecto
+git add filename
+
+#eliminar un archivo del repositorio
+git rm --cache filename
+
+#registra el snapshot actual
+git commit -m "etiqueta"
+
+#sube todas los snapshots locales al repositorio
+git push -u origin master
+git push -u origin branchname
+git push 
+
+#descarga los ultimos snapshots desde el repositorio
+git pull 
+
+#conectarse a repositorio remoto, por ejemplo, en github
+git remote add origin https://github.com/villarjose/IoTEA
+
+#clonar un repositorio en la cuenta de un colaborador
+git clone https://github.com/villarjose/IoTEA
+
+#crear branch
+git branch newBranchName
+
+#cambiar a una rama
+git checkout branchName
+ejemplos:
+   git checkout master
+   git checkout newBranchName
+
+
