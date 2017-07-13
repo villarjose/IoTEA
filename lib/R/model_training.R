@@ -79,12 +79,14 @@
 # Acciones:
 #   window <- obtener datos de ventana para main_act, main_profile, participant
 #   distances <- HARgetActivitySimilarities(connect, main_act, main_profile, participant)
+#
 #   P_data <- empty data.frame
 #   nd <- recopilar datos actividad main_act
 #   tramos <- segmentar nd por tramos no consecutivos en el tiempo
 #   For each tramo in tramos
 #     P_data <- agnadir tramo como una nueva TS a P_data  
 #   sim_acts <- actividades similares a main_profile segun indicado en similar_activities
+#
 #   N_data <- empty data.frame
 #   For each act in sim_acts:
 #     nd <- recopilar datos act
@@ -93,20 +95,24 @@
 #        N_data <- agnadir tramo como una nueva TS a N_data  
 #   dif_acts <- actividades que no son similares a main_profile (son acts que no 
 #           aparecen en similar_activities para main_profile)
+#
 #   F_data <- empty data.frame
 #   For each act in dif_acts:
 #     nd <- recopilar datos act
 #     tramos <- segmentar nd por tramos no consecutivos en el tiempo
 #     For each tramo in tramos
 #        F_data <- agnadir tramo como una nueva TS a F_data  
+#
 #   pos_data <- Calcular transformadas a P_data 
 #        (ojo: se aplica la ventana deslizante sobre cada tramo, generando una muestra de 
 #            transformada por cada ventana: se reduce el numero de muestras)
 #   neg_data <- Calcular transformadas a N_data 
 #   dif_data <- Calcular transformadas a F_data
+#
 #   pos_data_train <- 90% de los datos de pos_data
 #   pos_data_test <-  10% de los datos de pos_data
 #   neg_data_train, neg_data_test <- completar_balanceado(pos_data_train, neg_data, dif_data)
+#
 #   Mu, sigma <- estadisticas de pos_data_train
 #   pos_data_train <- normalizar pos_data_train con Mu, sigma
 #   pos_data_test <- normalizar pos_data_test con Mu, sigma
@@ -120,6 +126,9 @@
 
 
 library(RMySQL)
+library(signal)
+
+
 
 HARgetAllActivities <- function(connect, level=3) {
   if (level < 0) { 
@@ -388,7 +397,7 @@ HARcomputeAoM <- function(df, ws, shift) {
 #  TBP calculado
 #
 tbp <- function(d, K=0.9){
-  a <- apply(data.frame(apply(df^2,1,sum)),1,sqrt) #modulo de los 3 ejes
+  a <- apply(data.frame(apply(d^2,1,sum)),1,sqrt) #modulo de los 3 ejes
   b <- c(a > (mean(a) + K * sd(a)))
   e <- c(0, diff(b,1) > 0) #el primer 0 es porque diff tiene una dimension menos
   #                         que b.
@@ -408,45 +417,154 @@ HARcomputeTBP <- function(df, ws, shift, K=0.9) {
 
 
 
+#------------------------------------------------------------------------------
+# HARcreateEllipFilter(n, Rs, Rp, W, type='high', plane='z')
+#------------------------------------------------------------------------------
+#Esta funcion calcula un filtro usando el paquete signal, función ellip.
+#Input:
+#  n, Rs, Rp, W      see signal::ellip for info
+#  type              'high', 'low', ...  see signal::ellip for info
+#  plane             'z', 's'            see signal::ellip for info
+#Output:
+#  filt   filtro calculado
+#
 HARcreateEllipFilter <- function(n, Rs, Rp, W, type='high', plane='z') {
   a <- ellip(n, Rs, Rp, W, type, plane)
   return(a)
 }
 
+#------------------------------------------------------------------------------
+# HARapplyEllipFilter(filt, ts)
+#------------------------------------------------------------------------------
+#Usando el filtro dado, se aplica el filtro. Utiliza signal::filter. Se aplica
+#sobre vectores o, bien, sobre series temporales del paquete signal.
+#Tras pruebas con valroes de init, no se ha obtenido el comportamiento esperado.
+#Pendiente de mejora.
+#Input:
+#  filt       filtro calculado con HARcreateEllipFilter
+#  ts         vector o serie temporal a lo que se le aplica el filtro
+#Output:
+#  y          salida filtrada
+#
 HARapplyEllipFilter <- function(filt, ts){
-  x <- as.matrix(ts)
-  if (is.list(filt)) {  initSize <- length(filt$b) -1 }
-  else { initSize <- length(filt) }
-  initState <- matrix(rep(apply(x, 2, mean), initSize), nrow=initSize, byrow=TRUE)
-  y <- signal::filter(filt, x, init=initState)
+  x <- as.vector(ts)
+  #if (is.list(filt)) {  initSize <- length(filt$b) -1 }
+  #else { initSize <- length(filt) }
+  y <- as.vector(signal::filter(filt, x) )  #, init=initState))
+  return(y)
 }
 
 
 
-#crear filtro:
-#[hpf_b, hpf_a]=filter_ellip_design(8, 3, 3.5, 0.25, 'highpass')
-#     scsignal.ellip(N=n, rs=Rs, rp=Rp, Wn=wn, btype=tpe, analog=False, output='ba')
-#[lpf_b, lpf_a]=filter_ellip_design(3, 0.1, 100, 0.3, 'lowpass')
-##these are the initial conditions for each filter: BA-->hpf, G-->lpf
-##they are all initilized to zero.
-#orderLow=3 
-#orderHigh=8
-#hpf_ba_zi = scsignal.lfilter_zi(hpf_b, hpf_a) 
-#lpf_g_zi = scsignal.lfilter_zi(lpf_b, lpf_a) 
-#hpf_ba_zi = np.tile(hpf_ba_zi.reshape(-1,1), [1, 3]) #one per axis!
-#lpf_g_zi = np.tile(lpf_g_zi.reshape(-1,1), [1, 3])
-#return (hpf_b, hpf_a, hpf_ba_zi, lpf_b, lpf_a, lpf_g_zi, orderLow, orderHigh)
+#------------------------------------------------------------------------------
+# HARcreateHighPassEllipFilter()
+#------------------------------------------------------------------------------
+#Crea el filtro especifico utilizado en toda la investigacion previa para 
+#filtrar ACC y extraer la BA. Es un filtro paso alto.
+#Llama a la funcion HARcreateEllipFilter
+#Input:
+#Output:
+#  f          filtro de paso alto obtenido
+#
+HARcreateHighPassEllipFilter <- function() {
+  return(HARcreateEllipFilter(8, 3, 3.5, 0.25, 'high'))
+}
 
-#def filter_filtering_column_wise(x, num, den, z):
-#  y, zf = scsignal.lfilter(num, den, x, axis=-1, zi=z*x[0])
-#return y, zf
+#------------------------------------------------------------------------------
+# HARcreateLowPassEllipFilter()
+#------------------------------------------------------------------------------
+#Crea el filtro especifico utilizado en toda la investigacion previa para 
+#filtrar ACC y extraer la G. Es un filtro paso bajo.
+#Llama a la funcion HARcreateEllipFilter
+#Input:
+#Output:
+#  f          filtro e paso bajo obtenido
+#
+HARcreateLowPassEllipFilter <- function() {
+  return(HARcreateEllipFilter(3, 0.1, 100, 0.3, 'low'))
+}
 
-#def filter_acc_component_filtering(X, num, den, Z):Y = np.zeros(X.shape)
-#zf = np.zeros(Z.shape)
-#for i in range(X.shape[1]):
-#  Y[:,i],zf[:,i] = filter_filtering_column_wise(X[:,i], num, den, Z[:,i])
-#return Y,zf
 
+
+#------------------------------------------------------------------------------
+# HARextractBAfromACC(acc)
+#------------------------------------------------------------------------------
+#Obtiene las componentes de la aceleracion del cuerpo BA a partir de las 
+#medidas generadas por un acelerometro.
+#Crea un filtro de paso alto usando HARcreateHighPassEllipFilter y la aplica 
+#para cada VECTOR COLUMNA a la funcion HARapplyEllipFilter. El resultado es una
+#matriz conteniendo las tres componentes de la BA
+#Input:
+# acc        matriz o data.frame con tres columnas, una para cada eje.
+#Output:
+#  y         segnal filtrada para cada eje, con tres columnas.
+#
+HARextractBAfromACC <- function(acc) {
+  filt <- HARcreateHighPassEllipFilter()
+  salida <- apply(data.frame(1:3), MARGIN=1, function(x) HARapplyEllipFilter(filt,ACC[,x]))
+  return(salida)
+}
+
+
+#------------------------------------------------------------------------------
+# HARextractGfromACC(acc)
+#------------------------------------------------------------------------------
+#Obtiene las componentes de la aceleracion de la gravedad G a partir de las 
+#medidas generadas por un acelerometro.
+#Crea un filtro de paso alto usando HARcreateLowPassEllipFilter y la aplica 
+#para cada VECTOR COLUMNA a la funcion HARapplyEllipFilter. El resultado es una
+#matriz conteniendo las tres componentes de la G
+#Input:
+# acc        matriz o data.frame con tres columnas, una para cada eje.
+#Output:
+#  y         segnal filtrada para cada eje, con tres columnas.
+#
+HARextractGfromACC <- function(acc) {
+  filt <- HARcreateLowPassEllipFilter()
+  salida <- apply(data.frame(1:3), MARGIN=1, function(x) HARapplyEllipFilter(filt,ACC[,x]))
+  return(salida)
+}
+
+
+
+#------------------------------------------------------------------------------
+# setNaN(v, mu)
+#------------------------------------------------------------------------------
+#Ajusta los valores NaN en v al valor dado mu
+#Input:
+# v        vector a elimiar los NaN
+# mu       valor que sustituye al NaN
+#Output:
+#  v       vector sin NaN
+#
+setNaN <- function(v, mu) {
+  v[is.nan(v)] <- mu
+  return(v)
+}
+
+#------------------------------------------------------------------------------
+# HARextractGfromACC(acc)
+#------------------------------------------------------------------------------
+#Obtiene las componentes de la aceleracion de la gravedad G a partir de las 
+#medidas generadas por un acelerometro.
+#Crea un filtro de paso alto usando HARcreateLowPassEllipFilter y la aplica 
+#para cada VECTOR COLUMNA a la funcion HARapplyEllipFilter. El resultado es una
+#matriz conteniendo las tres componentes de la G
+#Input:
+# acc        matriz o data.frame con tres columnas, una para cada eje.
+#Output:
+#  y         segnal filtrada para cada eje, con tres columnas.
+#
+HARnormalize <- function(ts, mu=NULL, sig=NULL) {
+  if (is.null(mu)){
+    mu <- colMeans(ts)
+  }
+  if (is.null(sig)) {
+    sig <- apply(data.frame(1:3), MARGIN=1, function(i) sd(ts[,i]))
+  }
+  salida <- sweep(sweep(ts, 2, mu, FUN='-'), 2, FUN='/')
+  salida <- apply(data.frame(1:ncol(salida)), MARGIN = 1, function(i) setNaN(salida[,i], mu[i]))
+}
 
 
 
