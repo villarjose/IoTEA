@@ -11,9 +11,20 @@
 #    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
+#    http://www.r-tutor.com/taxonomy/term/287
 #    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
 #    https://eight2late.wordpress.com/2017/02/07/a-gentle-introduction-to-support-vector-machines-using-r/
 #    https://www.r-bloggers.com/learning-kernels-svm/
+#    https://www.r-bloggers.com/the-5th-tribe-support-vector-machines-and-caret/
+#    https://www.csie.ntu.edu.tw/~cjlin/papers/guide/guide.pdf
+#CARET:
+#    http://topepo.github.io/caret/available-models.html
+#    http://www.r-tutor.com/taxonomy/term/287
+#    https://cran.r-project.org/web/packages/caret/caret.pdf
+#    https://cran.r-project.org/web/packages/caret/vignettes/caret.pdf
+#    https://www.youtube.com/watch?v=7Jbb2ItbTC4
+#Paralelizing tasks in R:
+#    http://gforge.se/2015/02/how-to-go-parallel-in-r-basics-tips/
 
 
 #createtable(profile, idprofile:<int,PK>, label:<text50,REQUIRED>)
