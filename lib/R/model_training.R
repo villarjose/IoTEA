@@ -1,135 +1,19 @@
-#references:
-# Matrices and Factors:
-#    https://www.programiz.com/r-programming/data-frame
-#    https://www.programiz.com/r-programming/factor
-# R and MySQL:
-#    https://www.r-bloggers.com/accessing-mysql-through-r/
-#    https://www.r-bloggers.com/connecting-r-to-mysqlmariadb/
-#    https://cran.r-project.org/web/packages/RMySQL/
-#    para bigint!!!
-#    https://stackoverflow.com/questions/3241748/using-rmysqls-dbgetquery-in-r-how-do-i-coerce-string-data-type-on-the-result-s
-#    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
-#SVM:
-#    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
-#    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
-#    https://eight2late.wordpress.com/2017/02/07/a-gentle-introduction-to-support-vector-machines-using-r/
-#    https://www.r-bloggers.com/learning-kernels-svm/
-
-
-#createtable(profile, idprofile:<int,PK>, label:<text50,REQUIRED>)
-#insert
-# 0, Not considered -all the profiles are included-
-# 1, Healthy
-# 2, Walking stick, crutch or crutches, etc
-# 3, Cognitive impairment
-
-#createtable(activity, idactivity:<text11,PK>, label:<text50,REQUIRED>, 
-#            isa:<int,can be empty>)
-#  11 viene de tres dígitos para cada nivel + dos puntos.
-#insert:
-# 1.0.0, Resting
-#   1.1.0, Lying, 1.0.0
-#     1.1.1, Sleeping, 1.1.0
-#     1.1.2, Resting, 1.1.0
-#   1.2.0, Sitting, 1.0.0
-#     1.2.1, Sleeping, 1.3.0
-#     1.3.2, Resting, 1.3.0
-# 2.0.0, Transition
-#   2.1.0, Getting up, 2.0.0
-#     2.1.1, Uprise from a bed, 2.1.0
-#     2.1.2, Uprise from a chair, 2.1.0
-#   2.2.0, Lying down, 2.0.0
-#     2.2.1, Lying down on a bed, 2.2.0
-#     2.2.2, Sitting down on a chair, 2.2.0
-# 3.0.0, Walk
-#   3.1.0, Without assistance, 3.0.0
-#     3.1.1, Walk, 3.1.0
-#     3.1.2, Stairs up, 3.1.0
-#     3.1.3, Going down a ramp, 3.1.0
-#   3.2.0, With the assistance of a rail, 3.0.0
-#     3.2.1, Walk, 3.1.0
-#     3.2.2, Stairs up, 3.1.0
-#     3.2.3, Going down a ramp, 3.1.0
-
-#createtable(activity_distances, < idact1:<int,FK>, idact2<int,FK>, idprofile:<int,FK>, 
-#                                  idparticipant:<int,FK>>:<PK>, q25:<float>,
-#                                 q50:<float>, q75:<float>)
-#the similarities between two activities might not be simmetrical
-#idact1 is the activity to compare with idact2
-
-
-
-#createtable(sliding_window, < idact1:<int,FK>, idprofile:<int,FK>, 
-#                              idparticipant:<int,FK,might be empty>:<PK>, 
-#                              windowsize:<int, positive>, shift:<int, positive>)
-
-
-
-
-
-# Para el caso de usar un profile concreto...
-#   (ojo: para el caso de main_profile 0, buscar las actividades similares se complica...)
-#   (ojo: esto es entrenamiento, por eso se recopilan todos los datos y se calculan las  
-#         transformadas. En explotacion esto puede ser diferente)
-# Parameters:
-#   main_act <- activity to learn
-#   main_profile <- main characteristic profile of the participant
-#   participant <- id del participante, < 0 si es para toda la poblacion
-#   
-# Acciones:
-#   window <- obtener datos de ventana para main_act, main_profile, participant
-#   distances <- HARgetActivitySimilarities(connect, main_act, main_profile, participant)
-#
-#   P_data <- empty data.frame
-#   nd <- recopilar datos actividad main_act
-#   tramos <- segmentar nd por tramos no consecutivos en el tiempo
-#   For each tramo in tramos
-#     P_data <- agnadir tramo como una nueva TS a P_data  
-#   sim_acts <- actividades similares a main_profile segun indicado en similar_activities
-#
-#   N_data <- empty data.frame
-#   For each act in sim_acts:
-#     nd <- recopilar datos act
-#     tramos <- segmentar nd por tramos no consecutivos en el tiempo
-#     For each tramo in tramos
-#        N_data <- agnadir tramo como una nueva TS a N_data  
-#   dif_acts <- actividades que no son similares a main_profile (son acts que no 
-#           aparecen en similar_activities para main_profile)
-#
-#   F_data <- empty data.frame
-#   For each act in dif_acts:
-#     nd <- recopilar datos act
-#     tramos <- segmentar nd por tramos no consecutivos en el tiempo
-#     For each tramo in tramos
-#        F_data <- agnadir tramo como una nueva TS a F_data  
-#
-#   pos_data <- Calcular transformadas a P_data 
-#        (ojo: se aplica la ventana deslizante sobre cada tramo, generando una muestra de 
-#            transformada por cada ventana: se reduce el numero de muestras)
-#   neg_data <- Calcular transformadas a N_data 
-#   dif_data <- Calcular transformadas a F_data
-#
-#   pos_data_train <- 90% de los datos de pos_data
-#   pos_data_test <-  10% de los datos de pos_data
-#   neg_data_train, neg_data_test <- completar_balanceado(pos_data_train, neg_data, dif_data)
-#
-#   Mu, sigma <- estadisticas de pos_data_train
-#   pos_data_train <- normalizar pos_data_train con Mu, sigma
-#   pos_data_test <- normalizar pos_data_test con Mu, sigma
-#   neg_data_train <- normalizar neg_data_train con Mu, sigma
-#   neg_data_test <- normalizar neg_data_test con Mu, sigma
-#   svm_mod, svm_stats <- generar_svm(pos_data_train, pos_data_tst, neg_data_train, neg_data_test)
-#   knn_mod, knn_stats <- generar_knn(pos_data_train, pos_data_tst, neg_data_train, neg_data_test)
-#   dt_mod, dt_stats <- generar_dt(pos_data_train, pos_data_tst, neg_data_train, neg_data_test)
-#   ensemble1 <- weighted_average(svm_mod, knn_mod, dt_mod, pos_data_tst, neg_data_tst)
-#   aprender svm con ventana deslizante sobre salida de ensemble1
-
-
 library(RMySQL)
 library(signal)
 
 
 
+#------------------------------------------------------------------------------
+# HARgetAllActivities
+#------------------------------------------------------------------------------
+#Input:
+#   connect       acceso a la base de datos
+#   level         default 3, is the depth of the ontology of activities we wish
+#                 to retrieve. If level equals 0, then all the activities are
+#                 considered.
+#Output:
+#   a data.frame with the requested activities.
+#
 HARgetAllActivities <- function(connect, level=3) {
   if (level < 0) { 
     sqlstm <- "select idactivity, label from activity; " 
