@@ -480,6 +480,37 @@ setNaN <- function(v, mu) {
 }
 
 #------------------------------------------------------------------------------
+# UTILmeanNaN(v)
+#------------------------------------------------------------------------------
+#Calcula la media a una matriz eliminando los NaN
+#Input:
+# v        vector o matriz de datos
+#Output:
+# mu       media calculada
+#
+UTILmeanNaN <- function(v) {
+  q <- lapply(seq(1,ncol(v)), function(x) mean(v[!is.nan(v[,x]),x]))
+  result = unlist(q)
+  return(result)
+}
+
+#------------------------------------------------------------------------------
+# UTILsdNaN(v)
+#------------------------------------------------------------------------------
+#Calcula la sd a una matriz eliminando los NaN
+#Input:
+# v        vector o matriz de datos
+#Output:
+# mu       sd calculada
+#
+UTILsdNaN <- function(v) {
+  q <- lapply(seq(1,ncol(v)), function(x) sd(v[!is.nan(v[,x]),x]))
+  result = unlist(q)
+  return(result)
+}
+
+
+#------------------------------------------------------------------------------
 # HARextractGfromACC(acc)
 #------------------------------------------------------------------------------
 #Obtiene las componentes de la aceleracion de la gravedad G a partir de las 
@@ -505,6 +536,39 @@ HARnormalize <- function(ts, mu=NULL, sig=NULL) {
 
 
 
+MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
+  parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
+  acts <- HARgetAllActivities(conn, level = 3) #column 1: idactivity, column 2: label
+  for(i in 1:nrow(parts)){
+    for(a in 1:nrow(acts)) {
+      sim <- HARcomputeActivitySimilarities(connect= conn, idactivity=acts[a,1], idparticipant=parts[i,1], 
+                                         idprofile=parts[i,2])
+      HARsetActivitySimilarities(connect=conn, idactivity = acts[a,1], idprofile = parts[i,2],
+                                 idparticipant = parts[i,1], sims = sim)
+    }
+  }
+}
+
+
+
+MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
+  parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
+  acts <- HARgetAllActivities(conn, level = 3) #column 1: idactivity, column 2: label
+  for(i in 1:nrow(parts)){
+    for(a in 1:nrow(acts)) {
+      sims <- HARgetActivitySimilarities(conn, acts[a,1], idparticipant=parts[i,1], 
+                                         idprofile=parts[i,2])
+      ssims <- sims[with(sims, sort(sims$q50)),]
+      simmean <- mean(sims$q50)
+      actdata <- HARrequestACCHRData(conn,idparticipant = parts[i,1], idactivity = acts[a,1])
+      mu = UTILmeanNaN(actdata)
+      sigma <- UTILsdNaN(actdata)
+      simAct <- rownames(ssims)[ssims<simean] #similar activities to current one
+      disimAct <- ronames(ssims)[ssims>=simean] #dissimilar activities to current one
+      
+    }
+  }
+}
 
 
 
