@@ -3,6 +3,12 @@ library(signal)
 
 
 
+DBconnectToHARDB <- function(u = 'essy', p = 'Papatolati666', 
+                             dbn = 'ESSYDB', h = '156.35.22.10') {
+  connect <- dbConnect(MySQL(), user=u, password=p, dbname=dbn, host=h)
+  return(connect)
+}
+
 #------------------------------------------------------------------------------
 # HARgetAllActivities
 #------------------------------------------------------------------------------
@@ -33,6 +39,28 @@ HARgetAllActivities <- function(connect, level=3) {
   res <- dbGetQuery(connect, sqlstm)
 }
 
+#------------------------------------------------------------------------------
+# HARgetAllParticipantss
+#------------------------------------------------------------------------------
+#Input:
+#   connect       acceso a la base de datos
+#   profile       default 0, includes all the participants independently of 
+#                 their current profile. If positive, then requests those
+#                 participants affected with that profile.
+#Output:
+#   a data.frame with the requested participants
+#
+HARgetAllParticipantss <- function(connect, profile = 0) {
+  if (profile == 0) { 
+    sqlstm <- "select idparticipant, idprofile from participant; " 
+  }
+  else if (level > 0) { 
+    sqlstm <- sprintf("select idparticipant, idprofile from participant where idprofile=%d; ", profile)
+  }
+  else { return( data.frame() )}
+  res <- dbGetQuery(connect, sqlstm)
+}
+
 #tmp <- sprintf("SELECT * FROM emp WHERE lname = %s", "O'Reilly")
 #dbEscapeStrings(con, tmp)
 #sql <- sprintf("insert into networks
@@ -56,7 +84,7 @@ HARgetAllActivities <- function(connect, level=3) {
 #   una matriz de similitudes, pares <idactivity, <q25, q50, q75> >
 #
 HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, idparticipant=-1 ) {
-  sqlstm <- paste('select * from ACC_DATA where idactivity =', idactivity)
+  sqlstm <- paste('select accx,accy, accz, hr from data where idactivity =', idactivity)
   if (profile != -1) {
     sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
   }
@@ -74,7 +102,7 @@ HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, id
   sims <- data.frame()
   for( idact in acts) {
     eudist <- data.frame()
-    sqlstm <- paste('select * from ACC_DATA where idactivity =', idact, ";")
+    sqlstm <- paste('select accx, accy, accz, hr from data where idactivity =', idact, ";")
     idactdata <- dbGetQuery(connect, sqlstm)
     whole <- rbind(actdata,idactdata)
     dm <- as.matrix(dist(whole, method = 'euclidean'))
@@ -133,7 +161,7 @@ HARsetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
 #  ans     listado de actividades similares, con idactivity, y los 3 cuartiles.
 #
 HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idparticipant = -1) {
-  sqlstm <- paste('select idact2, q25, q50, q75 from activity_distances where idactivity =', idactivity)
+  sqlstm <- paste('select idact2, q25, q50, q75 from activity_distances where idact1 =', idactivity)
   if (profile != -1) {
     sqlstm <- paste(sqlstm, 'and', 'idprofile =', toString(idprofile))
   }
@@ -164,7 +192,7 @@ HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
 #and generates a list of TS, spliting them when there are big differences in the
 #timestamps
 #Input:
-#   df       the dataframe with all the data
+#   df       the dataframe with all the data, should include the timestamp!
 #Output:
 #   ans      a list with dataframes, one per TS
 #
@@ -199,17 +227,42 @@ HARsplitIntoTS <- function(df) {
 #
 HARrequestAllACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
   if (idactivity == "0.0.0") {
-    sqlstm <- paste("select * from ACC_HR where id = ", idparticipant,sep='')
+    sqlstm <- paste("select * from data where idparticipant = ", idparticipant,sep='')
     df <- dbGetQuery(sqlstm)
   }
   else {
-    sqlstm <- paste("select * from ACC_HR where id = ", idparticipant,
-                    " and Actividad=",idactivity,sep='')
+    sqlstm <- paste("select * from data where idparticipant = ", idparticipant,
+                    " and idactivity=",idactivity,sep='')
     df <- dbGetQuery(sqlstm)
   }
   return(df)
 }
 
+#------------------------------------------------------------------------------
+# HARrequestACCHRData
+#------------------------------------------------------------------------------
+#This function returns a dataframe with aac,hr & timestamp records for a pair 
+#<participant,activity> from the database
+#Input:
+#  connect     conexion a la base de datos
+#  idactivity  actividad para la que se recuperan las actividades similares
+#  idparticipant   sujeto para el que se buscan las actividades similares, -1 si 
+#              no se desea especificar este valor
+#Output:
+#  df          dataframe con los datos pedidos
+#
+HARrequestACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
+  if (idactivity == "0.0.0") {
+    sqlstm <- sprintf("select time, accx, accy, accz, hr from data where idparticipant=%d;", idparticipant) #,sep='')
+    df <- dbGetQuery(sqlstm)
+  }
+  else {
+    sqlstm <- sprintf("select  time, accx, accy, accz, hr from data where idparticipant=%d and idactivity=%d;",
+                      idparticipant,idactivity)
+    df <- dbGetQuery(sqlstm)
+  }
+  return(df)
+}
 
 
 #------------------------------------------------------------------------------
@@ -453,9 +506,10 @@ HARnormalize <- function(ts, mu=NULL, sig=NULL) {
 
 
 
+
+
 ModelLearningInterface <- function() {
-  connect <- dbConnect(MySQL(), user='essy', password='Papatolati666', 
-                       dbname='ESSYDB', host='156.35.22.10')
+  connect <- DBconnectToHARDB(u='essy', p='Papatolati666', dbn='ESSYDB', h='156.35.22.10')
   activs<- HARgetAllActivities(connect)  
   
   
