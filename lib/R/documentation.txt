@@ -25,7 +25,8 @@
 #    https://www.youtube.com/watch?v=7Jbb2ItbTC4
 #Paralelizing tasks in R:
 #    http://gforge.se/2015/02/how-to-go-parallel-in-r-basics-tips/
-
+#Cross validation in R using CARET:
+#    http://machinelearningmastery.com/compare-models-and-select-the-best-using-the-caret-r-package/
 
 #createtable(profile, idprofile:<int,PK>, label:<text50,REQUIRED>)
 #insert
@@ -74,8 +75,16 @@
 #                              idparticipant:<int,FK,might be empty>:<PK>, 
 #                              windowsize:<int, positive>, shift:<int, positive>)
 
-
-
+#Insertar datos para actividad '1.0.0':
+#  idprofile   windowsize  shift
+#     1           32         16
+#     2           32         16
+#     3           32         16
+INSERT INTO ESSYDB.sliding_window VALUES 
+('0.0.0',1,NULL, 32,16)
+('0.0.0',2,NULL, 32,16)
+('0.0.0',3,NULL, 32,16)
+;
 
 
 # Para el caso de usar un profile concreto...
