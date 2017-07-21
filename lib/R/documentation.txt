@@ -11,6 +11,7 @@
 #    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
+#    http://rischanlab.github.io/SVM.html
 #    http://www.r-tutor.com/taxonomy/term/287
 #    https://www.svm-tutorial.com/2014/10/support-vector-regression-r/
 #    https://eight2late.wordpress.com/2017/02/07/a-gentle-introduction-to-support-vector-machines-using-r/

@@ -1,6 +1,6 @@
 library(RMySQL)
 library(signal)
-
+library(doMC)
 
 Qs <- function(s){
   return(paste("'",s,"'",sep=''))
@@ -656,13 +656,18 @@ MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
 MLinitializeAllML <- function(conn){
   parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
   acts <- HARgetAllActivities(conn, level = 3) #column 1: idactivity, column 2: label
+  
+  nullActivity = '0.0.0'
+  
   for(i in 1:nrow(parts)){ #for each participant i
     #
     #get the sliding window
     window <- HARgetSlidingWindow(idprofile = parts[i,2])
+    #
+    #for each activity and participant
     for(a in 1:nrow(acts)) { #for each activity a
       #
-      #obtain the activities similarities wrt a
+      #obtain the activities similarities wrt a and i
       sims <- HARgetActivitySimilarities(conn, acts[a,1], idparticipant=parts[i,1], 
                                          idprofile=parts[i,2])
       #sort the similarities according to the median
@@ -672,14 +677,14 @@ MLinitializeAllML <- function(conn){
       #obtain the data
       #data for participant i and activity a 
       actdata <- HARrequestACCHRData(conn,idparticipant = parts[i,1], idactivity = acts[a,1])
-      muACC = UTILmeanNaN(actdata)
-      sigmaACC <- UTILsdNaN(actdata)
+      #
       #data for participant i and the similar activities
       #   a SIMILAR activity is that with distance SMALLER than the similarity distance mean simmean
       simAct <- rownames(ssims)[ssims<simean] #similar activities to a
       lsimdata <- lapply(seq(1,length(simAct)), function(x) HARrequestACCHRData(conn, idparticipant = parts[i,1], 
                                                                                 idactivity = simAct[x])) 
       simdata <- do.call(rbind, lsimdata) #from a list of matrices to a matrix
+      #
       #data for participant i and the dissimilar activities
       #   a DISSIMILAR activity is that with distance EQUAL or HIGHER than the similarity distance mean simmean
       disimAct <- ronames(ssims)[ssims>=simean] #dissimilar activities to a
@@ -696,37 +701,80 @@ MLinitializeAllML <- function(conn){
       #for actdata
       l <- HARsplitIntoTS(actdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       actBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
+#      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
       #for simdata
       l <- HARsplitIntoTS(simdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       simBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
+#      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
       simtTRF <- HARcomputeTransformations(actBA, window.windowsize, window.shift)
       #for dsimdata
       l <- HARsplitIntoTS(dsimdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:4]), window.windowsize, window.shift)
-      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       dsimBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
+#      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
       #
       #Its time to pre-process the data:
       #   to normalize BA according to mu and sigma for actdata
       #   eliminate any NaN as 20*sigmaBA
-      #   
       muBA <- UTILmeanNaN(actBA)
       sigmaBA <- UTILsdNaN(actBA)
+      #
       actBAn <- (actBA - muBA)/sigmaBA
       actBAn[is.nan(actBAn)] = 20*sigmaBA
+      names(actBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       simBAn <- (simBA - muBA)/sigmaBA
       simBAn[is.nan(simBAn)] = 20*sigmaBA
+      names(simBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       dsimBAn <- (dsimBA - muBA)/sigmaBA
       dsimBAn[is.nan(dsimBAn)] = 20*sigmaBA
+      names(dsimBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       #
+      #Now, let's go with caret
+      #  using paralell library: library(doMC)
+      #                          registerDoMC(cores = 5)
+      #  using predefines random seeds
+      #  10-fold cross validation
+      #  model: 'svmRadialSigma' from kernlab
+      #       parameters: Cost <- c(0:4/4,1) or c(0.25, 0.5, 1)
+      #                   sigma <- c(0.25, 0.5, 1, 2) or c(0.25, 0.5, 1)
+      #  
       
+      cl <- rep(a,nrow(actBAn))
+      c0 <- rep(nullActivity, nrow(simBAn)+nrow(dsimBAn))
+      Class <- factor(c(c1, c0))
+      inputdata <- rbind(rbind(actBAn, simBAn), dsimBAn)
+      allData <- cbind(inputdata, Class)
+      
+      registerDoMC(cores = 5)
+      set.seed(123)
+      repeats = 1
+      folds = 10
+      costs = c(0.25, 0.5, 0.75, 1, 2)
+      sigma = c(0.25, 0.5, 0.75, 1, 2)
+      parameters = length(costs)*length(sigma)
+      numRands = parameters
+      numLists = repeats * folds + 1
+      seeds <- vector(mode = "list", length = numLists)
+      for(i in 1:(numLists-1)) seeds[[i]] <- sample.int(1000, parameters)
+      seeds[[numLists]] <- sample.int(1000, 1)
+      
+      paramGrid <- expand.grid(sigma = sigma, C = costs)
+      
+#      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
+      ctrl <- trainControl(method = "repeatedcv", repeats = repeats, seeds = seeds,
+                           classProbs = TRUE, allowParallel = TRUE)
+      set.seed(1)
+      mod <- train(Class ~ ., data = allData,
+                   method = "svmRadialSigma",
+                   tuneLength = parameters,
+                   tuneGrid = paramGrid,
+                   trControl = ctrl,
+                   preProcess=NULL)
     }
   }
 }
