@@ -1,6 +1,8 @@
 library(RMySQL)
 library(signal)
 library(doMC)
+library(caret)
+
 
 Qs <- function(s){
   return(paste("'",s,"'",sep=''))
@@ -783,13 +785,11 @@ MLinitializeAllML <- function(conn){
 
 ModelLearningInterface <- function() {
   connect <- DBconnectToHARDB(u='essy', p='Papatolati666', dbn='ESSYDB', h='156.35.22.10')
-  activs<- HARgetAllActivities(connect)  
-  
+  MLsetActivitiesSimilaritiesbyParticipantActivity(connect)  
+  MLinitializeAllML(connect)
   
   dbDisconnect(conn)
 }
-
-
 
 
 
