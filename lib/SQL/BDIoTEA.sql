@@ -1,3 +1,14 @@
+#CREATE USER 'root'@'%' IDENTIFIED BY 'Papatolati666';
+#GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY 'Papatolati666' WITH GRANT OPTION;
+#
+#CREATE USER 'essy'@'%';
+#CREATE USER 'essy'@'localhost';
+#CREATE USER 'essy'@'127.0.0.1';
+#update user set Password=PASSWORD('Papatolati666') where User='essy';
+#CREATE DATABASE ESSYDB;
+#GRANT ALL PRIVILEGES ON ESSYDB.* TO 'essy'@'%';
+#GRANT ALL PRIVILEGES ON ESSYDB.* TO 'essy'@'localhost';
+#GRANT ALL PRIVILEGES ON ESSYDB.* TO 'essy'@'127.0.0.1';
 
 
 DROP TABLE IF EXISTS ESSYDB.calibration_activitytemplate CASCADE;
@@ -36,11 +47,11 @@ INSERT INTO ESSYDB.activity VALUES
 ('0.0.0', 'Zero Activity', NULL),
 ('1.0.0', 'Resting', NULL),
    ('1.1.0', 'Lying', '1.0.0'),
-      ('1.1.1', 'Sleeping', '1.1.0'),
-      ('1.1.2', 'Resting', '1.1.0'),
+      ('1.1.1', 'Lying Sleeping', '1.1.0'),
+      ('1.1.2', 'Lying Resting', '1.1.0'),
    ('1.2.0', 'Sitting', '1.0.0'),
-      ('1.2.1', 'Sleeping', '1.2.0'),
-      ('1.2.2', 'Resting', '1.2.0'),
+      ('1.2.1', 'Sitting Sleeping', '1.2.0'),
+      ('1.2.2', 'Sitting Resting', '1.2.0'),
 ('2.0.0', 'Transition', NULL),
    ('2.1.0', 'Getting up', '2.0.0'),
       ('2.1.1', 'Uprise from a bed', '2.1.0'),
@@ -48,15 +59,15 @@ INSERT INTO ESSYDB.activity VALUES
    ('2.2.0', 'Lying down', '2.0.0'),
       ('2.2.1', 'Lying down on a bed', '2.2.0'),
       ('2.2.2', 'Sitting down on a chair', '2.2.0'),
-('3.0.0', 'Walk', NULL),
+('3.0.0', 'Walking', NULL),
    ('3.1.0', 'Without assistance', '3.0.0'),
-      ('3.1.1', 'Walk', '3.1.0'),
-      ('3.1.2', 'Stairs up', '3.1.0'),
-     ('3.1.3', 'Going down a ramp', '3.1.0'),
+      ('3.1.1', 'Walking independently', '3.1.0'),
+      ('3.1.2', 'Stairs up independently', '3.1.0'),
+     ('3.1.3', 'Going down a ramp independently', '3.1.0'),
    ('3.2.0', 'With the assistance of a rail', '3.0.0'),
-      ('3.2.1', 'Walk', '3.1.0'),
-      ('3.2.2', 'Stairs up', '3.1.0'),
-      ('3.2.3', 'Going down a ramp', '3.1.0');
+      ('3.2.1', 'Walking with assistance', '3.1.0'),
+      ('3.2.2', 'Stairs up with assistance', '3.1.0'),
+      ('3.2.3', 'Going down a ramp with assistance', '3.1.0');
 
 
 CREATE TABLE ESSYDB.participant (

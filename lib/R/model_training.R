@@ -4,6 +4,12 @@ library(doMC)
 library(caret)
 
 
+
+DBLgetQuery <- function(conn, sqlstm){
+  return(suppressWarnings(dbGetQuery(conn, sqlstm)))
+}
+
+
 Qs <- function(s){
   return(paste("'",s,"'",sep=''))
 }
@@ -93,15 +99,16 @@ HARgetAllActivities <- function(connect, level=3) {
     sqlstm <- "select idactivity, label from activity; " 
   }
   else if (level == 1) { 
-    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[1-9][0-9]%.0.0'; "
+    sqlstm <- "select idactivity, label from activity where idactivity REGEXP '(([1-9][0-9]?[0-9])|[1-9])[.]0[.]0'; "
   }
   else if (level == 2) {
-    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[0-9]%.[1-9][0-9]%.0'; "
+    sqlstm <- "select idactivity, label from activity where idactivity REGEXP '(([1-9][0-9]?[0-9])|[1-9])[.](([1-9][0-9]?[0-9])|[1-9])[.]0'; "
   }
   else if (level == 3) {
-    sqlstm <- "select idactivity, label from activity where idactivity LIKE '[0-9]%.[0-9]%.[1-9][0-9]%'; "
+    sqlstm <- "select idactivity, label from activity where idactivity REGEXP '(([1-9][0-9]?[0-9])|[1-9])[.](([1-9][0-9]?[0-9])|[1-9])[.](([1-9][0-9]?[0-9])|[1-9])'; "
   }
-  res <- dbGetQuery(connect, sqlstm)
+  res <- DBLgetQuery(connect, sqlstm)
+  return(res)
 }
 
 #------------------------------------------------------------------------------
@@ -123,7 +130,7 @@ HARgetAllParticipantss <- function(connect, profile = 0) {
     sqlstm <- sprintf("select idparticipant, idprofile from participant where idprofile=%d; ", profile)
   }
   else { return( data.frame() )}
-  res <- dbGetQuery(connect, sqlstm)
+  res <- DBLgetQuery(connect, sqlstm)
   return(res)
 }
 
@@ -146,7 +153,7 @@ HARgetSlidingWindow <- function(connect, idprofile, idactivity = '0.0.0', idpart
     sqlstm <- sprintf("select windowsize, shift from sliding_window where idact1=%s and  idprofile=%d and idparticipant=%d;",
                       Qs(idactivity), idprofile, idparticipant)
   }
-  res <- dbGetQuery(connect, sqlstm)
+  res <- DBLgetQuery(connect, sqlstm)
   return(res)
 }
 
@@ -163,18 +170,17 @@ HARgetSlidingWindow <- function(connect, idprofile, idactivity = '0.0.0', idpart
 #   una matriz de similitudes, pares <idactivity, <q25, q50, q75> >
 #
 HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, idparticipant=-1 ) {
-  sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity =%s', Qs(idactivity))
-  if (profile != -1) {
-    sqlstm <- paste(sqlstm, ' and idprofile =%d')
-    sqlstm <- sprintf(sqlstm, idprofile)
-  }
+  #sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity=%s', Qs(idactivity))
   if (idparticipant != -1) {
-    sqlstm <- paste(sqlstm, ' and idparticipant =%d' )
-    sqlstm <- sprintf(sqlstm, idparticipant)
+    sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity=%s and idparticipant =%d;', 
+                      Qs(idactivity), idparticipant)
   }
-  sqlstm <- paste(sqlstm, ";")
-  actdata <- dbGetQuery(connect, sqlstm)
+  else {
+    sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity=%s;', Qs(idactivity))
+  }
+  actdata <- DBLgetQuery(connect, sqlstm)
   ns <- nrow(actdata)
+  if (nrow(actdata) == 0) { return(data.frame()) }
   
   acts <- HARgetAllActivities(connect, 3)
   acts <- acts[, 'idactivity']
@@ -182,19 +188,31 @@ HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, id
   
   sims <- data.frame()
   for( idact in acts) {
-    eudist <- data.frame()
-    sqlstm <- sprintf('select accx, accy, accz, hr from data where idactivity =%s;', Qs(idact))
-    idactdata <- dbGetQuery(connect, sqlstm)
-    whole <- rbind(actdata,idactdata)
-    dm <- as.matrix(dist(whole, method = 'euclidean'))
-    l = nrow(dm)
-    dm <- dm[(ns+1):l, 1:ns]
-    sims <- rbind(sims, quantile(matrix(dm,nrow=1))[2:4])
+    #sqlstm <- sprintf('select accx, accy, accz, hr from data where idactivity =%s;', Qs(idact))
+    if (idparticipant != -1) {
+      sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity=%s and idparticipant =%d;', 
+                        Qs(idact), idparticipant)
+    }
+    else {
+      sqlstm <- sprintf('select accx,accy, accz, hr from data where idactivity=%s;', Qs(idact))
+    }
+    idactdata <- DBLgetQuery(connect, sqlstm)
+    if (nrow(idactdata) == 0) {
+      sims <- rbind(sims, rep(1000*4*nrow(actdata), 3) )
+    }
+    else {
+      whole <- rbind(actdata,idactdata)
+      dm <- as.matrix(dist(whole, method = 'euclidean'))
+      l = nrow(dm)
+      dm <- dm[(ns+1):l, 1:ns]
+      sims <- rbind(sims, quantile(matrix(dm,nrow=1))[2:4])
+    }
   }
   rownames(sims) <- acts
   colnames(sims) <- c("q25", "q50", "q75")
   return(sims)
 }
+
 
 
 #------------------------------------------------------------------------------
@@ -210,18 +228,18 @@ HARcomputeActivitySimilarities <- function(connect, idactivity, idprofile=-1, id
 #   sims          matriz de similitudes. Si NULL no se hace nada.
 #
 HARsetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idparticipant = -1, 
-                           sims = NULL) {
+                                       sims = NULL) {
   if (is.null(sims)) {
     return(-1)
   }
   basesql <- paste("insert into activity_distances",
-                  "(idact1, idact2, idprofile, idparticipant, q25, q50, q75)",
-                  "values (%s, %s, %d, %d, %f, %f, %f);" )
+                   "(idact1, idact2, idprofile, idparticipant, q25, q50, q75)",
+                   "values (%s, %s, %d, %d, %f, %f, %f);" )
   rns <- rownames(sims)
   for( r in rns) {
     sqlstm <- sprintf(basesql, Qs(idactivity), Qs(r), idprofile, idparticipant, 
                       sims[r,1], sims[r,2], sims[r,3])
-    res <- dbGetQuery(sqlstm)
+    res <- DBLgetQuery(connect, sqlstm)
   }
   return(0)
 }
@@ -252,7 +270,7 @@ HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
     sqlstm <- sprintf(sqlstm, idparticipant)
   }
   sqlstm <- paste(sqlstm, ';')
-  actdata <- dbGetQuery(connect, sqlstm)
+  actdata <- DBLgetQuery(connect, sqlstm)
   if (nrow(actdata) == 0) {
     ans <- HARcomputeActivitySimilarities(connect, idactivity, idprofile, idparticipant)
     return(ans)
@@ -281,7 +299,7 @@ HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
 #
 HARsplitIntoTS <- function(df) {
   timedif <- df[3:nrow(df), 1] - df[2:(nrow(df)-1), 1] > 
-                1.2 * df[2:(nrow(df)-1), 1] - df[1:(nrow(df)-2), 1]
+    1.2 * df[2:(nrow(df)-1), 1] - df[1:(nrow(df)-2), 1]
   positions <- which(timedif %in% TRUE)
   p = 1
   nTS <- list()
@@ -311,12 +329,12 @@ HARsplitIntoTS <- function(df) {
 HARrequestAllACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
   if (idactivity == "0.0.0") {
     sqlstm <- sprintf("select * from data where idparticipant = %d;", idparticipant)
-    df <- dbGetQuery(sqlstm)
+    df <- DBLgetQuery(connect, sqlstm)
   }
   else {
     sqlstm <- sprintf("select * from data where idparticipant = %d and idactivity=%s", 
                       idparticipant, Qs(idactivity))
-    df <- dbGetQuery(sqlstm)
+    df <- DBLgetQuery(connect, sqlstm)
   }
   return(df)
 }
@@ -337,12 +355,12 @@ HARrequestAllACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
 HARrequestACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
   if (idactivity == "0.0.0") {
     sqlstm <- sprintf("select time, accx, accy, accz, hr from data where idparticipant=%d;", idparticipant) #,sep='')
-    df <- dbGetQuery(sqlstm)
+    df <- DBLgetQuery(connect, sqlstm)
   }
   else {
     sqlstm <- sprintf("select  time, accx, accy, accz, hr from data where idparticipant=%d and idactivity=%d;",
                       idparticipant, Qs(idactivity))
-    df <- dbGetQuery(sqlstm)
+    df <- DBLgetQuery(connect, sqlstm)
   }
   return(df)
 }
@@ -371,7 +389,7 @@ HARcomputeSMA <- function(df, ws, shift){
   a <- seq(1, nrow(df) -shift, shift)
   a <- a[1:nrow(b)]
   r <- apply(data.frame(a, b), MARGIN=1,
-        function(x) sma(df[x[1]:x[2],]))
+             function(x) sma(df[x[1]:x[2],]))
   return(r)
 }
 
@@ -398,7 +416,7 @@ HARcomputeAoM <- function(df, ws, shift) {
   a <- seq(1, nrow(df) -shift, shift)
   a <- a[1:nrow(b)]
   r <- apply(data.frame(a, b), MARGIN=1,
-        function(x) aom(df[x[1]:x[2],]))
+             function(x) aom(df[x[1]:x[2],]))
   return(r)
 }
 
@@ -636,6 +654,7 @@ HARnormalize <- function(ts, mu=NULL, sig=NULL) {
   }
   salida <- sweep(sweep(ts, 2, mu, FUN='-'), 2, FUN='/')
   salida <- apply(data.frame(1:ncol(salida)), MARGIN = 1, function(i) setNaN(salida[,i], mu[i]))
+  return(salida)
 }
 
 
@@ -646,7 +665,7 @@ MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
   for(i in 1:nrow(parts)){
     for(a in 1:nrow(acts)) {
       sim <- HARcomputeActivitySimilarities(connect= conn, idactivity=acts[a,1], idparticipant=parts[i,1], 
-                                         idprofile=parts[i,2])
+                                            idprofile=parts[i,2])
       HARsetActivitySimilarities(connect=conn, idactivity = acts[a,1], idprofile = parts[i,2],
                                  idparticipant = parts[i,1], sims = sim)
     }
@@ -661,10 +680,12 @@ MLinitializeAllML <- function(conn){
   
   nullActivity = '0.0.0'
   
+  allmodels = list()
+  
   for(i in 1:nrow(parts)){ #for each participant i
     #
     #get the sliding window
-    window <- HARgetSlidingWindow(idprofile = parts[i,2])
+    window <- HARgetSlidingWindow(connect = conn, idprofile = parts[i,2])
     #
     #for each activity and participant
     for(a in 1:nrow(acts)) { #for each activity a
@@ -691,7 +712,7 @@ MLinitializeAllML <- function(conn){
       #   a DISSIMILAR activity is that with distance EQUAL or HIGHER than the similarity distance mean simmean
       disimAct <- ronames(ssims)[ssims>=simean] #dissimilar activities to a
       ldsimdata <- lapply(seq(1,length(disimAct)), function(x) HARrequestACCHRData(conn, idparticipant = parts[i,1], 
-                                                                                 idactivity = disimAct[x]))
+                                                                                   idactivity = disimAct[x]))
       dsimdata <- do.call(rbind, ldsimdata)
       #
       #Now, its time to filter 
@@ -703,22 +724,22 @@ MLinitializeAllML <- function(conn){
       #for actdata
       l <- HARsplitIntoTS(actdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       actBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-#      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
+      #      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
       #for simdata
       l <- HARsplitIntoTS(simdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       simBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-#      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
+      #      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
       simtTRF <- HARcomputeTransformations(actBA, window.windowsize, window.shift)
       #for dsimdata
       l <- HARsplitIntoTS(dsimdata)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:4]), window.windowsize, window.shift)
-#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       dsimBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-#      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
+      #      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
       #
       #Its time to pre-process the data:
       #   to normalize BA according to mu and sigma for actdata
@@ -767,7 +788,7 @@ MLinitializeAllML <- function(conn){
       
       paramGrid <- expand.grid(sigma = sigma, C = costs)
       
-#      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
+      #      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
       ctrl <- trainControl(method = "repeatedcv", repeats = repeats, seeds = seeds,
                            classProbs = TRUE, allowParallel = TRUE)
       set.seed(1)
@@ -777,8 +798,10 @@ MLinitializeAllML <- function(conn){
                    tuneGrid = paramGrid,
                    trControl = ctrl,
                    preProcess=NULL)
+      allmodels <- list(allmodels,mod)
     }
   }
+  return(allmodels)
 }
 
 
@@ -790,6 +813,8 @@ ModelLearningInterface <- function() {
   
   dbDisconnect(conn)
 }
+
+
 
 
 

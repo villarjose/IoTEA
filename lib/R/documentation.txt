@@ -9,6 +9,8 @@
 #    para bigint!!!
 #    https://stackoverflow.com/questions/3241748/using-rmysqls-dbgetquery-in-r-how-do-i-coerce-string-data-type-on-the-result-s
 #    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
+#saving R objects in MySQL
+#    http://jfaganuk.github.io/2015/01/12/storing-r-objects-in-sqlite-tables/
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
 #    http://rischanlab.github.io/SVM.html
