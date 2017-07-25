@@ -260,8 +260,8 @@ HARsetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
 #  ans     listado de actividades similares, con idactivity, y los 3 cuartiles.
 #
 HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idparticipant = -1) {
-  sqlstm <- sprintf('select idact2, q25, q50, q75 from activity_distances where idact1 =%s', Qsi(dactivity))
-  if (profile != -1) {
+  sqlstm <- sprintf('select idact2, q25, q50, q75 from activity_distances where idact1 =%s', Qs(idactivity))
+  if (idprofile != -1) {
     sqlstm <- paste(sqlstm, ' and idprofile =%d')
     sqlstm <- sprintf(sqlstm, idprofile)
   }
@@ -294,12 +294,12 @@ HARgetActivitySimilarities <- function(connect, idactivity, idprofile = -1, idpa
 #timestamps
 #Input:
 #   df       the dataframe with all the data, should include the timestamp!
+#   samplingPeriod   the inverse of the sampling frequency, default set to 1/16
 #Output:
 #   ans      a list with dataframes, one per TS
 #
-HARsplitIntoTS <- function(df) {
-  timedif <- df[3:nrow(df), 1] - df[2:(nrow(df)-1), 1] > 
-    1.2 * df[2:(nrow(df)-1), 1] - df[1:(nrow(df)-2), 1]
+HARsplitIntoTS <- function(df, samplingPeriod = (1/16)) {
+  timedif <- abs(df[2:nrow(df), 1] - df[1:(nrow(df)-1), 1] ) > 3 * samplingPeriod 
   positions <- which(timedif %in% TRUE)
   p = 1
   nTS <- list()
@@ -309,9 +309,11 @@ HARsplitIntoTS <- function(df) {
     p1 <- positions[p]
     p <- p + 1
   }
+  if (p1 < nrow(df)) {
+    nTS[[p]] <- df[p1:nrow(df),]
+  }
   return(nTS)
 }
-
 
 #------------------------------------------------------------------------------
 # HARrequestAllACCHRData
@@ -358,7 +360,7 @@ HARrequestACCHRData <- function(connect, idparticipant, idactivity="0.0.0") {
     df <- DBLgetQuery(connect, sqlstm)
   }
   else {
-    sqlstm <- sprintf("select  time, accx, accy, accz, hr from data where idparticipant=%d and idactivity=%d;",
+    sqlstm <- sprintf("select  time, accx, accy, accz, hr from data where idparticipant=%d and idactivity=%s;",
                       idparticipant, Qs(idactivity))
     df <- DBLgetQuery(connect, sqlstm)
   }
@@ -387,11 +389,12 @@ sma <- function(d) {
 HARcomputeSMA <- function(df, ws, shift){
   b <- seq(ws, nrow(df), shift)
   a <- seq(1, nrow(df) -shift, shift)
-  a <- a[1:nrow(b)]
+  a <- a[1:length(b)]
   r <- apply(data.frame(a, b), MARGIN=1,
              function(x) sma(df[x[1]:x[2],]))
   return(r)
 }
+
 
 
 #------------------------------------------------------------------------------
@@ -414,7 +417,7 @@ aom <- function(d) {
 HARcomputeAoM <- function(df, ws, shift) {
   b <- seq(ws, nrow(df), shift)
   a <- seq(1, nrow(df) -shift, shift)
-  a <- a[1:nrow(b)]
+  a <- a[1:length(b)]
   r <- apply(data.frame(a, b), MARGIN=1,
              function(x) aom(df[x[1]:x[2],]))
   return(r)
@@ -439,7 +442,7 @@ tbp <- function(d, K=0.9){
   b <- c(a > (mean(a) + K * sd(a)))
   e <- c(0, diff(b,1) > 0) #el primer 0 es porque diff tiene una dimension menos
   #                         que b.
-  f <- c(0, which(c(0,diff(c,1)>0) %in% 1)) #idem de lo mismo
+  f <- which(e %in% 1) #las posiciones de los 1's   ###c(0, which(c(0,diff(c,1)>0) %in% 1)) #idem de lo mismo
   g <- mean(diff(f))
   return(g)
 }
@@ -448,7 +451,7 @@ tbp <- function(d, K=0.9){
 HARcomputeTBP <- function(df, ws, shift, K=0.9) {
   b <- seq(ws, nrow(df), shift)
   a <- seq(1, nrow(df) -shift, shift)
-  a <- a[1:nrow(b)]
+  a <- a[1:length(b)]
   r <- apply(data.frame(a, b), MARGIN=1,
              function(x) tbp(df[x[1]:x[2],], K))
   return(r)
@@ -470,9 +473,16 @@ HARcomputeTBP <- function(df, ws, shift, K=0.9) {
 #  HRmean calculado
 #
 HARcomputeHRmean <- function(df, ws, shift) {
-  b <- seq(ws, nrow(df), shift)
-  a <- seq(1, nrow(df) -shift, shift)
-  a <- a[1:nrow(b)]
+  if (is.vector(df)) {
+    b <- seq(ws, length(df), shift)
+    a <- seq(1, length(df) -shift, shift)
+    a <- a[1:length(b)]
+  }
+  else if (is.data.frame(df)) {
+    b <- seq(ws, nrow(df), shift)
+    a <- seq(1, nrow(df) -shift, shift)
+    a <- a[1:length(b)]
+  }
   r <- apply(data.frame(a, b), MARGIN=1,
              function(x) mean(df[x[1]:x[2]]))
   return(r)
@@ -564,7 +574,7 @@ HARcreateLowPassEllipFilter <- function() {
 #
 HARextractBAfromACC <- function(acc) {
   filt <- HARcreateHighPassEllipFilter()
-  salida <- apply(data.frame(1:3), MARGIN=1, function(x) HARapplyEllipFilter(filt,ACC[,x]))
+  salida <- apply(data.frame(1:3), MARGIN=1, function(x) HARapplyEllipFilter(filt,acc[,x]))
   return(salida)
 }
 
@@ -602,7 +612,7 @@ HARextractGfromACC <- function(acc) {
 #  res    matriz con 4 columnas: SMA, AoM, TBP, HRmean
 #
 HARcomputeBATransformations <- function( ldata, ws, shift) {
-  ba <- HARextractBAfromACC(l[[x]][,1:3])
+  ba <- HARextractBAfromACC(ldata[,1:3])
   c1 <- HARcomputeSMA(ba, ws, shift)
   c2 <- HARcomputeAoM(ba, ws, shift)
   c3 <- HARcomputeTBP(ba, ws, shift)
@@ -623,7 +633,7 @@ HARcomputeBATransformations <- function( ldata, ws, shift) {
 #  res    matriz con 4 columnas: SMA, AoM, TBP, HRmean
 #
 HARcomputeGTransformations <- function( ldata, ws, shift) {
-  ba <- HARextractGfromACC(l[[x]][,1:3])
+  ba <- HARextractGfromACC(ldata[,1:3])
   c1 <- HARcomputeSMA(ba, ws, shift)
   c2 <- HARcomputeAoM(ba, ws, shift)
   c3 <- HARcomputeTBP(ba, ws, shift)
@@ -694,23 +704,24 @@ MLinitializeAllML <- function(conn){
       sims <- HARgetActivitySimilarities(conn, acts[a,1], idparticipant=parts[i,1], 
                                          idprofile=parts[i,2])
       #sort the similarities according to the median
-      ssims <- sims[with(sims, sort(sims$q50)),]
+      ssims <- sims[with(sims, order(sims$q50,sims$q75,sims$q25)),]
       simmean <- mean(sims$q50)
       #
       #obtain the data
       #data for participant i and activity a 
       actdata <- HARrequestACCHRData(conn,idparticipant = parts[i,1], idactivity = acts[a,1])
+      if (nrow(actdata) == 0) { next } #nosense to continue because this activity hasn't got data yet
       #
       #data for participant i and the similar activities
       #   a SIMILAR activity is that with distance SMALLER than the similarity distance mean simmean
-      simAct <- rownames(ssims)[ssims<simean] #similar activities to a
+      simAct <- rownames(ssims[ssims$q50 < simmean,]) #similar activities to a
       lsimdata <- lapply(seq(1,length(simAct)), function(x) HARrequestACCHRData(conn, idparticipant = parts[i,1], 
                                                                                 idactivity = simAct[x])) 
       simdata <- do.call(rbind, lsimdata) #from a list of matrices to a matrix
       #
       #data for participant i and the dissimilar activities
       #   a DISSIMILAR activity is that with distance EQUAL or HIGHER than the similarity distance mean simmean
-      disimAct <- ronames(ssims)[ssims>=simean] #dissimilar activities to a
+      disimAct <- rownames(ssims[ssims$q50 >= simmean,]) #dissimilar activities to a
       ldsimdata <- lapply(seq(1,length(disimAct)), function(x) HARrequestACCHRData(conn, idparticipant = parts[i,1], 
                                                                                    idactivity = disimAct[x]))
       dsimdata <- do.call(rbind, ldsimdata)
@@ -723,23 +734,34 @@ MLinitializeAllML <- function(conn){
       #   Fourth: include the HR to the BA and G datasets!!! But without the timestamp
       #for actdata
       l <- HARsplitIntoTS(actdata)
-      LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+      LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5], ws=window$windowsize, shift=window$shift))
+#      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       actBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      #      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
+#      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
+      #
       #for simdata
-      l <- HARsplitIntoTS(simdata)
-      LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5]), window.windowsize, window.shift)
-      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
-      simBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      #      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
-      simtTRF <- HARcomputeTransformations(actBA, window.windowsize, window.shift)
+      if (nrow(simdata) > 0) {
+        l <- HARsplitIntoTS(simdata)
+        LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5], ws=window$windowsize, shift=window$shift))
+#              LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+        simBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
+#      simG <- cbind( do.call(rbind, LG), simdata[,5]) #<<--- without timestamp
+      }
+      else {
+        simBA = data.frame()
+      }
+      #
       #for dsimdata
-      l <- HARsplitIntoTS(dsimdata)
-      LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:4]), window.windowsize, window.shift)
-      #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
-      dsimBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
-      #      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
+      if (nrow(dsimdata) > 0 ) {
+        l <- HARsplitIntoTS(dsimdata)
+        LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:4], ws=window$windowsize, shift=window$shift))
+        #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
+        dsimBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
+#      dsimG <- cbind(do.call(rbind, LG), dsimdata[,5]) #<<--- without timestamp
+      }
+      else {
+        dsimBA = data.frame()
+      }
       #
       #Its time to pre-process the data:
       #   to normalize BA according to mu and sigma for actdata
@@ -747,15 +769,23 @@ MLinitializeAllML <- function(conn){
       muBA <- UTILmeanNaN(actBA)
       sigmaBA <- UTILsdNaN(actBA)
       #
-      actBAn <- (actBA - muBA)/sigmaBA
+      actBAn <- cbind(do.call(rbind, lapply(seq(1,nrow(actBA)), function(x) (actBA[x,]-muBA)/sigmaBA) ) )
       actBAn[is.nan(actBAn)] = 20*sigmaBA
-      names(actBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
-      simBAn <- (simBA - muBA)/sigmaBA
-      simBAn[is.nan(simBAn)] = 20*sigmaBA
-      names(simBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
-      dsimBAn <- (dsimBA - muBA)/sigmaBA
-      dsimBAn[is.nan(dsimBAn)] = 20*sigmaBA
-      names(dsimBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
+      colnames(actBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
+      if (nrow(simBA) > 0) {
+        simBAn <- cbind(do.call(rbind, lapply(seq(1,nrow(simBA)), function(x) (simBA[x,]-muBA)/sigmaBA))) 
+        simBAn[is.nan(simBAn)] = 20*sigmaBA
+        colnames(simBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
+      } else {
+        simBAn <- data.frame()
+      }
+      if (nrow(dsimBA) > 0) {
+        dsimBAn <- cbind(do.call(rbind, lapply(seq(1,nrow(dsimBA)), function(x) (dsimBA[x,]-muBA)/sigmaBA)))  
+        dsimBAn[is.nan(dsimBAn)] = 20*sigmaBA
+        colnames(dsimBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
+      } else {
+        dsimBAn <- data.frame()
+      }
       #
       #Now, let's go with caret
       #  using paralell library: library(doMC)
@@ -767,8 +797,8 @@ MLinitializeAllML <- function(conn){
       #                   sigma <- c(0.25, 0.5, 1, 2) or c(0.25, 0.5, 1)
       #  
       
-      cl <- rep(a,nrow(actBAn))
-      c0 <- rep(nullActivity, nrow(simBAn)+nrow(dsimBAn))
+      c1 <- rep('yes', nrow(actBAn))  #rep(acts[a,1],nrow(actBAn))
+      c0 <- rep('no', nrow(simBAn)+nrow(dsimBAn) )  # rep(nullActivity, nrow(simBAn)+nrow(dsimBAn))
       Class <- factor(c(c1, c0))
       inputdata <- rbind(rbind(actBAn, simBAn), dsimBAn)
       allData <- cbind(inputdata, Class)
@@ -778,8 +808,8 @@ MLinitializeAllML <- function(conn){
       repeats = 1
       folds = 10
       costs = c(0.25, 0.5, 0.75, 1, 2)
-      sigma = c(0.25, 0.5, 0.75, 1, 2)
-      parameters = length(costs)*length(sigma)
+      #sigma = c(0.25, 0.5, 0.75, 1, 2)
+      parameters = length(costs) #*length(sigma)
       numRands = parameters
       numLists = repeats * folds + 1
       seeds <- vector(mode = "list", length = numLists)
@@ -788,12 +818,14 @@ MLinitializeAllML <- function(conn){
       
       paramGrid <- expand.grid(sigma = sigma, C = costs)
       
-      #      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
+      paramGrid <- expand.grid( C = costs)
+      
+#      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
       ctrl <- trainControl(method = "repeatedcv", repeats = repeats, seeds = seeds,
                            classProbs = TRUE, allowParallel = TRUE)
       set.seed(1)
       mod <- train(Class ~ ., data = allData,
-                   method = "svmRadialSigma",
+                   method = 'svmRadialCost',# "svmRadialSigma",
                    tuneLength = parameters,
                    tuneGrid = paramGrid,
                    trControl = ctrl,
