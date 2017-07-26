@@ -11,6 +11,8 @@
 #    https://stackoverflow.com/questions/7105962/how-do-i-run-a-high-pass-or-low-pass-filter-on-data-points-in-r
 #saving R objects in MySQL
 #    http://jfaganuk.github.io/2015/01/12/storing-r-objects-in-sqlite-tables/
+#    https://stackoverflow.com/questions/1395115/storing-r-objects-in-a-relational-database
+#    https://github.com/rstats-db/RMySQL/issues/123
 #SVM:
 #    https://cran.r-project.org/web/packages/e1071/vignettes/svmdoc.pdf
 #    http://rischanlab.github.io/SVM.html
@@ -30,6 +32,12 @@
 #    http://gforge.se/2015/02/how-to-go-parallel-in-r-basics-tips/
 #Cross validation in R using CARET:
 #    http://machinelearningmastery.com/compare-models-and-select-the-best-using-the-caret-r-package/
+# R and Shiny
+#    https://shiny.rstudio.com/tutorial/
+# R and Rook
+#    https://cran.r-project.org/web/packages/Rook/Rook.pdf
+#    https://www.r-bloggers.com/rook-rocks-example-with-googlevis/
+#
 
 #createtable(profile, idprofile:<int,PK>, label:<text50,REQUIRED>)
 #insert
