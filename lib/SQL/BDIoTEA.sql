@@ -10,7 +10,11 @@
 #GRANT ALL PRIVILEGES ON ESSYDB.* TO 'essy'@'localhost';
 #GRANT ALL PRIVILEGES ON ESSYDB.* TO 'essy'@'127.0.0.1';
 
-
+#
+# Introducido 27-7-2017
+DROP TABLE IF EXISTS ESSYDB.parameters CASCADE;
+DROP TABLE IF EXISTS ESSYDB.model CASCADE;
+#
 DROP TABLE IF EXISTS ESSYDB.calibration_activitytemplate CASCADE;
 DROP TABLE IF EXISTS ESSYDB.calibration_experiment CASCADE;
 DROP TABLE IF EXISTS ESSYDB.data_processed CASCADE;
@@ -119,9 +123,9 @@ CREATE TABLE ESSYDB.sliding_window (
 
 
 INSERT INTO ESSYDB.sliding_window VALUES 
-('0.0.0',1,NULL, 32,16),
-('0.0.0',2,NULL, 32,16),
-('0.0.0',3,NULL, 32,16);
+('0.0.0',1,0, 32,16),
+('0.0.0',2,0, 32,16),
+('0.0.0',3,0, 32,16);
 
 CREATE TABLE ESSYDB.data (
   `idparticipant` TINYINT UNSIGNED NOT NULL,
@@ -137,16 +141,47 @@ CREATE TABLE ESSYDB.data (
   PRIMARY KEY (`idparticipant`, `time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+
+#CREATE TABLE ESSYDB.method ( 
+#  `idmethod` TINYINT UNSIGNED NOT NULL,  
+#  `description` VarChar(100) NOT NULL,
+#  PRIMARY KEY (`idmethod`)
+#) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+#CREATE TABLE ESSYDB.classifier ( 
+#  `idclassifier` TINYINT UNSIGNED NOT NULL,  
+#  `idmethod` TINYINT UNSIGNED NOT NULL,
+#  `idactivity` VarChar(11) NOT NULL,
+#  `idparticipant` TINYINT UNSIGNED NOT NULL,
+#  `idprofile` TINYINT UNSIGNED NOT NULL,
+#  `output` FLOAT,
+#  FOREIGN KEY (`idmethod`) REFERENCES ESSYDB.method(`idmethod`),
+#  FOREIGN KEY (`idactivity`) REFERENCES ESSYDB.activity(`idactivity`),
+#  FOREIGN KEY (`idparticipant`) REFERENCES ESSYDB.participant(`idparticipant`),
+#  FOREIGN KEY (`idprofile`) REFERENCES ESSYDB.profile(`idprofile`),  
+#  FOREIGN KEY (`idprofile`) REFERENCES ESSYDB.profile(`idprofile`),  
+#  PRIMARY KEY (`idclassifier`)
+#) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+# Modificacion 27-7-2017
+# El idmetodo es el identificador en el paquete R.caret del tipo de modelo a usar
+# Por lo tanto, cambia de integer a texto
 CREATE TABLE ESSYDB.method ( 
-  `idmethod` TINYINT UNSIGNED NOT NULL,  
+  `idmethod` VarChar(20)  NOT NULL,  
   `description` VarChar(100) NOT NULL,
   PRIMARY KEY (`idmethod`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+INSERT INTO ESSYDB.method VALUES
+('svmRadialCost', 'R-caret radial basis kernel SVM with the cost as the single parameter ');
 
+# Modificacion 27-7-2017
+# Dado que idmethod es varchar, hay que rehacer esta tabla
+# idclassifier se ha puesto como auto numerico
 CREATE TABLE ESSYDB.classifier ( 
-  `idclassifier` TINYINT UNSIGNED NOT NULL,  
-  `idmethod` TINYINT UNSIGNED NOT NULL,
+  `idclassifier` TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,  
+  `idmethod` VarChar(20) NOT NULL,
   `idactivity` VarChar(11) NOT NULL,
   `idparticipant` TINYINT UNSIGNED NOT NULL,
   `idprofile` TINYINT UNSIGNED NOT NULL,
@@ -155,10 +190,43 @@ CREATE TABLE ESSYDB.classifier (
   FOREIGN KEY (`idactivity`) REFERENCES ESSYDB.activity(`idactivity`),
   FOREIGN KEY (`idparticipant`) REFERENCES ESSYDB.participant(`idparticipant`),
   FOREIGN KEY (`idprofile`) REFERENCES ESSYDB.profile(`idprofile`),  
-  FOREIGN KEY (`idprofile`) REFERENCES ESSYDB.profile(`idprofile`),  
   PRIMARY KEY (`idclassifier`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+ALTER TABLE ESSYDB.classifier AUTO_INCREMENT = 1;
+
+
+# Modificacion 27-7-2017
+# Tabla donde se almacena el modelo aprendido
+# Observar que, al tener como clave idmodel autonumerico y clave foranea idclassifier,
+# ahora es posible tener varios modelos para un participante, actividad y perfil.
+# Evaluar si se pasa a valor unico de idclassifier.
+# AHORA SE HACE POR CODIGO
+CREATE TABLE ESSYDB.model ( 
+  `idmodel` TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,  
+  `idclassifier` TINYINT UNSIGNED NOT NULL,  
+  `model` MEDIUMTEXT,
+  FOREIGN KEY (`idclassifier`) REFERENCES ESSYDB.classifier(`idclassifier`),
+  PRIMARY KEY (`idmodel`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+       
+ALTER TABLE ESSYDB.model AUTO_INCREMENT = 1;
+
+# Modificacion 27-7-2017
+# Tabla donde se almacenan valores como las medias y desviaciones tipicas para normalizar, etc.
+CREATE TABLE ESSYDB.modelParams (
+  `idclassifier` TINYINT UNSIGNED NOT NULL,  
+  `mnACCx` FLOAT,
+  `mnACCy` FLOAT,
+  `mnACCz` FLOAT,
+  `mnHR` FLOAT,
+  `sdACCx` FLOAT,
+  `sdACCy` FLOAT,
+  `sdACCz` FLOAT,
+  `sdHR` FLOAT,
+  FOREIGN KEY (`idclassifier`) REFERENCES ESSYDB.classifier(`idclassifier`)
+  ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+  
 
 
 CREATE TABLE ESSYDB.data_processed ( 
@@ -179,10 +247,10 @@ CREATE TABLE ESSYDB.data_processed (
   PRIMARY KEY (`time`, `idparticipant`, `idclassifier`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Toma de tiempos en los experimentos que deben seguir las actividades en el orden marcado
--- por la tabla calibration_activitytemplate
---
+#-- activity_distancessliding_window
+#-- Toma de tiempos en los experimentos que deben seguir las actividades en el orden marcado
+#-- por la tabla calibration_activitytemplate
+#--
 CREATE TABLE ESSYDB.calibration_experiment ( 
   `lap` TINYINT UNSIGNED NOT NULL,
   `idparticipant` TINYINT UNSIGNED NOT NULL,  
@@ -241,7 +309,22 @@ INSERT INTO ESSYDB.calibration_activitytemplate VALUES
 (NULL,'0.0.0', 'Desconectar todos los aparatos');
       
       
-      
+
+####################################################################
+####################################################################
+###  Introducido 27-7-2017  ########################################
+####################################################################
+CREATE TABLE ESSYDB.parameters (
+  `parameter` VarChar(20) NOT NULL,
+  `description` VarChar(50),
+  `value` REAL,
+  PRIMARY KEY (`parameter`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+INSERT INTO ESSYDB.parameters VALUES
+('ACCsamplingFrequency', 'ITCL watch ACC Sampling Frequency', 16);
+
+
 
 
 FLUSH PRIVILEGES;

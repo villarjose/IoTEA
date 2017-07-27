@@ -2,13 +2,12 @@ library(RMySQL)
 library(signal)
 library(doMC)
 library(caret)
-
+library(RSQLite)
 
 
 DBLgetQuery <- function(conn, sqlstm){
   return(suppressWarnings(dbGetQuery(conn, sqlstm)))
 }
-
 
 Qs <- function(s){
   return(paste("'",s,"'",sep=''))
@@ -669,6 +668,105 @@ HARnormalize <- function(ts, mu=NULL, sig=NULL) {
 
 
 
+
+
+DBLcreateLocalDatabase <- function(file = "./localModels.sqlite") {
+  datacon = dbConnect(drv=RSQLite::SQLite(), dbname=file,flags = SQLITE_RWC)
+  sqlstm <- "DROP TABLE  params;"
+  try( dbGetQuery(datacon, sqlstm))
+  sqlstm <- "DROP TABLE  model;"
+  try( dbGetQuery(datacon, sqlstm))
+  sqlstm <- "DROP TABLE modelParams;"
+  try(dbGetQuery(datacon, sqlstm))
+  #  sqlstm <- "CREATE TABLE model (`idclassifier` TINYINT UNSIGNED NOT NULL,  `model` MEDIUMTEXT, PRIMARY KEY (`idclassifier`) );"
+  sqlstm <- "CREATE TABLE model (`idclassifier` TINYINT UNSIGNED NOT NULL, `idmethod` VarChar(20) NOT NULL,`idactivity` VarChar(11) NOT NULL,`idparticipant` TINYINT UNSIGNED NOT NULL,`idprofile` TINYINT UNSIGNED NOT NULL, `model` VarChar(2000), PRIMARY KEY (`idclassifier`) );"
+  dbGetQuery(datacon, sqlstm)
+  sqlstm <- "CREATE TABLE modelParams (`idclassifier` TINYINT UNSIGNED NOT NULL,  `mnACCx` FLOAT, `mnACCy` FLOAT, `mnACCz` FLOAT, `mnHR` FLOAT, `sdACCx` FLOAT, `sdACCy` FLOAT, `sdACCz` FLOAT, `sdHR` FLOAT, PRIMARY KEY (`idclassifier`) );"
+  dbGetQuery(datacon, sqlstm)
+  sqlstm <- "CREATE TABLE params (`pathToModels` VarChar(20000) );"
+  dbGetQuery(datacon, sqlstm)
+  sqlstm <- "INSERT INTO params (`pathToModels`) VALUES ('/Users/ec1cgi/IoTEA/R') ;"
+  dbGetQuery(datacon, sqlstm)
+  dbDisconnect(datacon)
+}
+
+DBLsaveModelLocally <- function(aModel, idclassifier, dbfile = "./localModels.sqlite") {
+  conn = dbConnect(drv=RSQLite::SQLite(), dbname=dbfile,flags = SQLITE_RWC)
+  #
+  #Los paramatros del modelo
+  sqlstm <- sprintf(paste('insert into modelParams (idclassifier, mnACCx, mnACCy, mnACCz, ',
+                          ' mnHR, sdACCx, sdACCy, sdACCz, sdHR) values (%d, %f, %f, %f, %f, %f, %f, %f, %f) '),
+                    idclassifier[1,1],
+                    aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
+                    aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4] )
+  dbGetQuery(conn, sqlstm)
+  #
+  #insertar datos del modelo en la base de datos local 
+  #y almacenar el modelo en un archivo serializado.
+  sqlstm <- 'select pathToModels from params '
+  ruta <- dbGetQuery(conn, sqlstm)
+  if (!file.exists(ruta[1,1])) {
+    ruta <- getwd()
+  }
+  fn <- sprintf(paste(ruta,'/%d-%d-%s-%s.rds', sep=''), 
+                aModel$idparticipant, aModel$idprofile, aModel$idactivity, aModel$idmethod)
+  sqlstm <- "insert into model (idclassifier, idmethod, idactivity, idparticipant, idprofile, model) VALUES (%d, %s, %s, %d, %d, %s);"
+  sqlstm <- sprintf(sqlstm, idclassifier[1,1], Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile, 
+                    Qs(fn))
+  dbGetQuery(conn, sqlstm)
+  
+  saveRDS(aModel, fn)
+  
+  dbDisconnect(con)
+}
+
+DBLsaveAModelToDB <- function(conn, aModel){
+  #  newModel <- list(idparticipant=parts[i,1], idactivity=acts[a,1], idprofile=parts[i,2], 
+  #  mmean = muBA, msd = sigmaBA, idmethod='svmRadialCost', idmodel= mod)
+  #classifier (idmethod, idactivity, idparticipant, idprofile, mean, sd) 
+  #model ( idmodel, idclassifier, model)
+  sqlstm <- sprintf(paste('select idclassifier from classifier where idparticipant=%d',
+                          'and idactivity=%s and idprofile=%d and idmethod=%s'),
+                    aModel$idparticipant, Qs(aModel$idactivity), aModel$idprofile,
+                    Qs(aModel$idmethod))
+  idclassifier <- dbGetQuery(conn, sqlstm)
+  if (nrow(idclassifier) <= 0) {  #no existe el clasificador previamente para <part, act, prof, metodo>
+    #
+    # introducir el nuevo registro de classifier
+    sqlstm <- sprintf(paste('insert into classifier (idmethod, idactivity, idparticipant, idprofile) ',
+                            ' VALUES (%s, %s, %d, %d)' ),
+                      Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile)
+    DBLgetQuery(conn, sqlstm)
+    #
+    #obtener el idclassifier asignado
+    sqlstm <- sprintf(paste('select idclassifier from classifier where idparticipant=%d',
+                            'and idactivity=%s and idprofile=%d and idmethod=%s'),
+                      aModel$idparticipant, Qs(aModel$idactivity), aModel$idprofile,
+                      Qs(aModel$idmethod))
+    idclassifier <- DBLgetQuery(conn, sqlstm)
+    if (nrow(idclassifier) <= 0) { return(-1)} #control de error
+    #
+    #insertar parametros media y desviacion
+    sqlstm <- sprintf(paste('insert into modelParams (idclassifier, mnACCx, mnACCy, mnACCz, ',
+                            ' mnHR, sdACCx, sdACCy, sdACCz, sdHR) values (%d, %f, %f, %f, %f, %f, %f, %f, %f) '),
+                      idclassifier[1,1],
+                      aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
+                      aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4] )
+    DBLgetQuery(conn, sqlstm)
+    #
+    #insertar el modelo, pero solo localmente
+    DBLsaveModelLocally(aModel, idclassifier)
+  }
+  
+}
+
+MLsaveModelsToDB <- function(conn, allmodels) {
+  
+}
+
+
+
+
 MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
   parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
   acts <- HARgetAllActivities(conn, level = 3) #column 1: idactivity, column 2: label
@@ -681,8 +779,6 @@ MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
     }
   }
 }
-
-
 
 MLinitializeAllML <- function(conn){
   parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
@@ -830,8 +926,11 @@ MLinitializeAllML <- function(conn){
                    tuneGrid = paramGrid,
                    trControl = ctrl,
                    preProcess=NULL)
-      allmodels <- list(allmodels,mod)
+      newModel <- list(idparticipant=parts[i,1], idactivity=acts[a,1], idprofile=parts[i,2], 
+                       mmean = muBA, msd = sigmaBA, idmethod='svmRadialCost', model= mod)
+      participantModels[[length(participantModels)+1]] <- newModel
     }
+    allmodels[[length(allmodels)+1]] <- participantModels  
   }
   return(allmodels)
 }
