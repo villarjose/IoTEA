@@ -14,6 +14,12 @@ Qs <- function(s){
 }
 
 
+DBgetACCsamplingFrequency <- function(conn){
+  sqlstm <- "select value from parameters where parameter='ACCsamplingFrequency';"
+  v <- DBLgetQuery(conn, sqlstm)
+  return(v)
+}
+
 #------------------------------------------------------------------------------
 # setNaN(v, mu)
 #------------------------------------------------------------------------------
@@ -40,7 +46,7 @@ setNaN <- function(v, mu) {
 #
 UTILmeanNaN <- function(v) {
   q <- lapply(seq(1,ncol(v)), function(x) mean(v[!is.nan(v[,x]),x]))
-  result = unlist(q)
+  result <- unlist(q)
   return(result)
 }
 
@@ -55,7 +61,9 @@ UTILmeanNaN <- function(v) {
 #
 UTILsdNaN <- function(v) {
   q <- lapply(seq(1,ncol(v)), function(x) sd(v[!is.nan(v[,x]),x]))
-  result = unlist(q)
+  result <- unlist(q)
+  result[is.nan(result)] <- 1
+  result[is.na(result)] <- 1
   return(result)
 }
 
@@ -386,6 +394,9 @@ sma <- function(d) {
 }
 
 HARcomputeSMA <- function(df, ws, shift){
+  if (is.vector(df)) {
+    to = 1
+  }
   b <- seq(ws, nrow(df), shift)
   a <- seq(1, nrow(df) -shift, shift)
   a <- a[1:length(b)]
@@ -611,6 +622,11 @@ HARextractGfromACC <- function(acc) {
 #  res    matriz con 4 columnas: SMA, AoM, TBP, HRmean
 #
 HARcomputeBATransformations <- function( ldata, ws, shift) {
+  if (nrow(ldata) < ws ) { #it doesnt make any sens when only a few data is available
+    return(c())          #minimum length the window size, so a minimum length TS generates at least one sample
+    #one sample
+  }
+  
   ba <- HARextractBAfromACC(ldata[,1:3])
   c1 <- HARcomputeSMA(ba, ws, shift)
   c2 <- HARcomputeAoM(ba, ws, shift)
@@ -690,41 +706,69 @@ DBLcreateLocalDatabase <- function(file = "./localModels.sqlite") {
   dbDisconnect(datacon)
 }
 
-DBLsaveModelLocally <- function(aModel, idclassifier, dbfile = "./localModels.sqlite") {
-  conn = dbConnect(drv=RSQLite::SQLite(), dbname=dbfile,flags = SQLITE_RWC)
-  #
-  #Los paramatros del modelo
-  sqlstm <- sprintf(paste('insert into modelParams (idclassifier, mnACCx, mnACCy, mnACCz, ',
-                          ' mnHR, sdACCx, sdACCy, sdACCz, sdHR) values (%d, %f, %f, %f, %f, %f, %f, %f, %f) '),
-                    idclassifier[1,1],
-                    aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
-                    aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4] )
-  dbGetQuery(conn, sqlstm)
-  #
-  #insertar datos del modelo en la base de datos local 
-  #y almacenar el modelo en un archivo serializado.
-  sqlstm <- 'select pathToModels from params '
-  ruta <- dbGetQuery(conn, sqlstm)
-  if (!file.exists(ruta[1,1])) {
-    ruta <- getwd()
+#DBLsaveModelLocally <- function(aModel, idclassifier, dbfile = "./localModels.sqlite") {
+#  conn <-  dbConnect(drv=RSQLite::SQLite(), dbname=dbfile,flags = SQLITE_RWC)
+DBLsaveModelLocally <- function(aModel, idclassifier, conn, update=FALSE) { 
+  if (!update) {
+    #
+    #Los paramatros del modelo
+    sqlstm <- sprintf(paste('insert into modelParams (idclassifier, mnACCx, mnACCy, mnACCz, ',
+                            ' mnHR, sdACCx, sdACCy, sdACCz, sdHR) values (%d, %f, %f, %f, %f, %f, %f, %f, %f); '),
+                      idclassifier,
+                      aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
+                      aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4] )
+    dbGetQuery(conn, sqlstm)
+    #
+    #insertar datos del modelo en la base de datos local 
+    #y almacenar el modelo en un archivo serializado.
+    sqlstm <- 'select pathToModels from params; '
+    ruta <- dbGetQuery(conn, sqlstm)
+    if (!file.exists(ruta[1,1])) {
+      ruta <- getwd()
+    }
+    fn <- sprintf(paste(ruta,'/%d-%d-%s-%s.rds', sep=''), 
+                  aModel$idparticipant, aModel$idprofile, aModel$idactivity, aModel$idmethod)
+    sqlstm <- "insert into model (idclassifier, idmethod, idactivity, idparticipant, idprofile, model) VALUES (%d, %s, %s, %d, %d, %s);"
+    sqlstm <- sprintf(sqlstm, idclassifier, Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile, 
+                      Qs(fn))
+    dbGetQuery(conn, sqlstm)
+    
+    saveRDS(aModel, fn)
   }
-  fn <- sprintf(paste(ruta,'/%d-%d-%s-%s.rds', sep=''), 
-                aModel$idparticipant, aModel$idprofile, aModel$idactivity, aModel$idmethod)
-  sqlstm <- "insert into model (idclassifier, idmethod, idactivity, idparticipant, idprofile, model) VALUES (%d, %s, %s, %d, %d, %s);"
-  sqlstm <- sprintf(sqlstm, idclassifier[1,1], Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile, 
-                    Qs(fn))
-  dbGetQuery(conn, sqlstm)
-  
-  saveRDS(aModel, fn)
-  
-  dbDisconnect(con)
+  else {   #existen datos previos, hay que usar UPDATE en vez de INSERT
+    #
+    #Los paramatros del modelo
+    sqlstm <- sprintf(paste('update modelParams set mnACCx=%f, mnACCy=%f, mnACCz=%f, ',
+                            ' mnHR=%f, sdACCx=%f, sdACCy=%f, sdACCz=%f, sdHR=%f where idclassifier=%d; '),
+                      aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
+                      aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4],
+                      idclassifier )
+    dbGetQuery(conn, sqlstm)
+    #
+    #insertar datos del modelo en la base de datos local 
+    #y almacenar el modelo en un archivo serializado.
+    sqlstm <- 'select pathToModels from params '
+    ruta <- dbGetQuery(conn, sqlstm)
+    if (!file.exists(ruta[1,1])) {
+      ruta <- getwd()
+    }
+    fn <- sprintf(paste(ruta,'/%d-%d-%s-%s.rds', sep=''), 
+                  aModel$idparticipant, aModel$idprofile, aModel$idactivity, aModel$idmethod)
+    sqlstm <- "update model set idmethod=%s, idactivity=%s, idparticipant=%d, idprofile=%d, model=%s where idclassifier=%d;"
+    sqlstm <- sprintf(sqlstm, Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile, 
+                      Qs(fn), idclassifier)
+    dbGetQuery(conn, sqlstm)
+    
+    saveRDS(aModel, fn)
+  }  
+#  dbDisconnect(con)
 }
 
-DBLsaveAModelToDB <- function(conn, aModel){
-  #  newModel <- list(idparticipant=parts[i,1], idactivity=acts[a,1], idprofile=parts[i,2], 
-  #  mmean = muBA, msd = sigmaBA, idmethod='svmRadialCost', idmodel= mod)
-  #classifier (idmethod, idactivity, idparticipant, idprofile, mean, sd) 
-  #model ( idmodel, idclassifier, model)
+DBLsaveAModelToDB <- function(conn, aModel, localConn){
+#  newModel <- list(idparticipant=parts[i,1], idactivity=acts[a,1], idprofile=parts[i,2], 
+#  mmean = muBA, msd = sigmaBA, idmethod='svmRadialCost', idmodel= mod)
+#classifier (idmethod, idactivity, idparticipant, idprofile, mean, sd) 
+#model ( idmodel, idclassifier, model)
   sqlstm <- sprintf(paste('select idclassifier from classifier where idparticipant=%d',
                           'and idactivity=%s and idprofile=%d and idmethod=%s'),
                     aModel$idparticipant, Qs(aModel$idactivity), aModel$idprofile,
@@ -755,13 +799,42 @@ DBLsaveAModelToDB <- function(conn, aModel){
     DBLgetQuery(conn, sqlstm)
     #
     #insertar el modelo, pero solo localmente
-    DBLsaveModelLocally(aModel, idclassifier)
+    #DBLsaveModelLocally(aModel, idclassifier, dbfile = "./localModels.sqlite")
+    DBLsaveModelLocally(aModel, idclassifier[1,1], localConn, update=FALSE)
+  }
+  else { #existen datos previos, hay que usar UPDATE en vez de INSERT
+    #
+    # introducir el nuevo registro de classifier
+    sqlstm <- sprintf(paste('update classifier set idmethod=%s, idactivity=%s, idparticipant=%d, idprofile=%d ',
+                            ' where idclassifier=%d;' ),
+                      Qs(aModel$idmethod), Qs(aModel$idactivity), aModel$idparticipant, aModel$idprofile,
+                      idclassifier[1,1])
+    DBLgetQuery(conn, sqlstm)
+    #
+    #insertar parametros media y desviacion
+    sqlstm <- sprintf(paste('update modelParams set mnACCx=%f, mnACCy=%f, mnACCz=%f, ',
+                            ' mnHR=%f, sdACCx=%f, sdACCy=%f, sdACCz=%f, sdHR=%f where idclassifier=%d; '),
+                      idclassifier[1,1],
+                      aModel$mmean[1], aModel$mmean[2], aModel$mmean[3], aModel$mmean[4], 
+                      aModel$msd[1], aModel$msd[2], aModel$msd[3], aModel$msd[4] )
+    DBLgetQuery(conn, sqlstm)
+    #
+    #insertar el modelo, pero solo localmente
+    #DBLsaveModelLocally(aModel, idclassifier, dbfile = "./localModels.sqlite")
+    DBLsaveModelLocally(aModel, idclassifier, localConn, update=TRUE)
   }
   
 }
 
-MLsaveModelsToDB <- function(conn, allmodels) {
-  
+MLsaveModelsToDBforPart <- function(conn, participantmodels, localConn) {
+  lapply(participantmodels, function(x,c1,c2) DBLsaveAModelToDB(c1, x, c2), c1=conn, c2=localConn)
+}
+
+
+MLsaveModelsToDB <- function(conn, allmodels, dbfile="./localModels.sqlite") {
+  localConn <-  dbConnect(drv=RSQLite::SQLite(), dbname=dbfile,flags = SQLITE_RWC)
+  lapply(allmodels, function(m, c1, c2)  MLsaveModelsToDBforPart(conn, m, c1), c1=conn, c2=localConn)
+  dbDisconnect(localConn)
 }
 
 
@@ -783,12 +856,18 @@ MLsetActivitiesSimilaritiesbyParticipantActivity <- function(conn){
 MLinitializeAllML <- function(conn){
   parts <- HARgetAllParticipantss(conn) #column 1: idparticipant, column 2: idprofile
   acts <- HARgetAllActivities(conn, level = 3) #column 1: idactivity, column 2: label
+  ACCsamplingFrequency = DBgetACCsamplingFrequency(conn)
+  
+  ACCsamplingPeriod = 1/ACCsamplingFrequency
+  ACCsamplingPeriod = 1 #solo para pruebas
   
   nullActivity = '0.0.0'
   
   allmodels = list()
   
   for(i in 1:nrow(parts)){ #for each participant i
+    
+    participantModels <- list()
     #
     #get the sliding window
     window <- HARgetSlidingWindow(connect = conn, idprofile = parts[i,2])
@@ -799,6 +878,9 @@ MLinitializeAllML <- function(conn){
       #obtain the activities similarities wrt a and i
       sims <- HARgetActivitySimilarities(conn, acts[a,1], idparticipant=parts[i,1], 
                                          idprofile=parts[i,2])
+      if (nrow(sims) == 0) { #este caso es de actividad sin datos --> no hay modelo posible
+        next
+      }
       #sort the similarities according to the median
       ssims <- sims[with(sims, order(sims$q50,sims$q75,sims$q25)),]
       simmean <- mean(sims$q50)
@@ -806,7 +888,9 @@ MLinitializeAllML <- function(conn){
       #obtain the data
       #data for participant i and activity a 
       actdata <- HARrequestACCHRData(conn,idparticipant = parts[i,1], idactivity = acts[a,1])
-      if (nrow(actdata) == 0) { next } #nosense to continue because this activity hasn't got data yet
+      if (nrow(actdata) == 0) {  #nonsense to continue because this activity hasn't got data yet
+        next 
+      }
       #
       #data for participant i and the similar activities
       #   a SIMILAR activity is that with distance SMALLER than the similarity distance mean simmean
@@ -829,15 +913,19 @@ MLinitializeAllML <- function(conn){
       #   Third: rearrange all of the BA and G filtered TS
       #   Fourth: include the HR to the BA and G datasets!!! But without the timestamp
       #for actdata
-      l <- HARsplitIntoTS(actdata)
+      l <- HARsplitIntoTS(actdata, ACCsamplingPeriod)
       LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5], ws=window$windowsize, shift=window$shift))
 #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
       actBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
+      if (is.null(actBA)) { next }   #De nuevo, control dimension de datos. Debe haber al menos 1 dato para entrenar
+      if (nrow(actBA) <= 0) { next } #De nuevo, control dimension de datos. Debe haber al menos 1 dato para entrenar
 #      actG <- cbind( do.call(rbind, LG), actdata[,5]) #<<--- without timestamp
       #
       #for simdata
-      if (nrow(simdata) > 0) {
-        l <- HARsplitIntoTS(simdata)
+      condition <- FALSE
+      condition=((!is.null(simdata)) & (nrow(simdata) > 0)) #try(condition=((!is.null(simdata)) & (nrow(simdata) > 0)))
+      if (condition==TRUE) { #((!is.null(simdata)) & (nrow(simdata) > 0) ) {
+        l <- HARsplitIntoTS(simdata, ACCsamplingPeriod)
         LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:5], ws=window$windowsize, shift=window$shift))
 #              LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
         simBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
@@ -848,8 +936,10 @@ MLinitializeAllML <- function(conn){
       }
       #
       #for dsimdata
-      if (nrow(dsimdata) > 0 ) {
-        l <- HARsplitIntoTS(dsimdata)
+      condition <- FALSE
+      condition=((!is.null(dsimdata)) & (nrow(dsimdata) > 0)) #try(condition=((!is.null(dsimdata)) & (nrow(dsimdata) > 0)))
+      if (condition==TRUE) { #      if  ((!is.null(dsimdata)) & (nrow(dsimdata) > 0) )  {
+        l <- HARsplitIntoTS(dsimdata, ACCsamplingPeriod)
         LBA <- lapply(seq(1,length(l)), function(x) HARcomputeBATransformations(l[[x]][,2:4], ws=window$windowsize, shift=window$shift))
         #      LG <-  lapply(seq(1,length(l)), function(x) HARextractGfromACC(l[[x]][,2:4]) )
         dsimBA <- cbind(do.call(rbind, LBA)) #<<--- without timestamp
@@ -870,14 +960,16 @@ MLinitializeAllML <- function(conn){
       colnames(actBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       if (nrow(simBA) > 0) {
         simBAn <- cbind(do.call(rbind, lapply(seq(1,nrow(simBA)), function(x) (simBA[x,]-muBA)/sigmaBA))) 
-        simBAn[is.nan(simBAn)] = 20*sigmaBA
+        if (any(is.nan(as.matrix(simBAn)))) {  simBAn[is.nan(as.matrix(simBAn))] = 20*sigmaBA }
+        if (any(is.na(as.matrix(simBAn)))) {  simBAn[is.na(as.matrix(simBAn))] = 20*sigmaBA }
         colnames(simBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       } else {
         simBAn <- data.frame()
       }
       if (nrow(dsimBA) > 0) {
         dsimBAn <- cbind(do.call(rbind, lapply(seq(1,nrow(dsimBA)), function(x) (dsimBA[x,]-muBA)/sigmaBA)))  
-        dsimBAn[is.nan(dsimBAn)] = 20*sigmaBA
+        if (any(is.nan(as.matrix(dsimBAn)))) {  dsimBAn[is.nan(as.matrix(dsimBAn))] = 20*sigmaBA }
+        if (any(is.na(as.matrix(dsimBAn)))) {  dsimBAn[is.na(as.matrix(dsimBAn))] = 20*sigmaBA }
         colnames(dsimBAn) <- c('SMA', 'AoM', 'TBP', 'HR')
       } else {
         dsimBAn <- data.frame()
@@ -892,39 +984,44 @@ MLinitializeAllML <- function(conn){
       #       parameters: Cost <- c(0:4/4,1) or c(0.25, 0.5, 1)
       #                   sigma <- c(0.25, 0.5, 1, 2) or c(0.25, 0.5, 1)
       #  
-      
-      c1 <- rep('yes', nrow(actBAn))  #rep(acts[a,1],nrow(actBAn))
-      c0 <- rep('no', nrow(simBAn)+nrow(dsimBAn) )  # rep(nullActivity, nrow(simBAn)+nrow(dsimBAn))
+      nsclass <- nrow(actBAn)
+      nsnoclass <-  nrow(simBAn)+nrow(dsimBAn)
+      if ((nsclass < (0.2 * nsnoclass)) | ((nsclass * 0.2) > nsnoclass)) { #ultima comprobacion de clases equilibradas: mas de un 20% muestras
+        next }
+      c1 <- rep('yes',nsclass)  #rep(acts[a,1],nrow(actBAn))
+      c0 <- rep('no', nsnoclass )  # rep(nullActivity, nrow(simBAn)+nrow(dsimBAn))
       Class <- factor(c(c1, c0))
       inputdata <- rbind(rbind(actBAn, simBAn), dsimBAn)
       allData <- cbind(inputdata, Class)
       
       registerDoMC(cores = 5)
       set.seed(123)
-      repeats = 1
+      Repeats = 1
       folds = 10
       costs = c(0.25, 0.5, 0.75, 1, 2)
       #sigma = c(0.25, 0.5, 0.75, 1, 2)
       parameters = length(costs) #*length(sigma)
       numRands = parameters
-      numLists = repeats * folds + 1
-      seeds <- vector(mode = "list", length = numLists)
-      for(i in 1:(numLists-1)) seeds[[i]] <- sample.int(1000, parameters)
-      seeds[[numLists]] <- sample.int(1000, 1)
+      numLists = Repeats * folds + 1
+      Seeds <- vector(mode = "list", length = numLists)
+      for(i in 1:(numLists-1)) Seeds[[i]] <- sample.int(1000, parameters)
+      Seeds[[numLists]] <- sample.int(1000, 1)
       
-      paramGrid <- expand.grid(sigma = sigma, C = costs)
+      #paramGrid <- expand.grid(sigma = sigma, C = costs)#a usar si model$method fuese 'svmRadialSigma'
       
       paramGrid <- expand.grid( C = costs)
       
 #      df <- createDataPartition(allData$Class, p=0.8, list=TRUE, times = 10)
-      ctrl <- trainControl(method = "repeatedcv", repeats = repeats, seeds = seeds,
+      
+      tenControl <- trainControl(method = "repeatedcv", repeats = Repeats, number=folds, seeds = Seeds,
                            classProbs = TRUE, allowParallel = TRUE)
       set.seed(1)
+      print(sprintf("i=%d, participant=%d, a=%d, mainActivity=%s", i, parts[i,1], a, acts[a,1]))
       mod <- train(Class ~ ., data = allData,
                    method = 'svmRadialCost',# "svmRadialSigma",
                    tuneLength = parameters,
                    tuneGrid = paramGrid,
-                   trControl = ctrl,
+                   trControl = tenControl,
                    preProcess=NULL)
       newModel <- list(idparticipant=parts[i,1], idactivity=acts[a,1], idprofile=parts[i,2], 
                        mmean = muBA, msd = sigmaBA, idmethod='svmRadialCost', model= mod)
@@ -937,15 +1034,28 @@ MLinitializeAllML <- function(conn){
 
 
 
-ModelLearningInterface <- function() {
+BASICcompleteModelLearningInterface <- function() {
   connect <- DBconnectToHARDB(u='essy', p='Papatolati666', dbn='ESSYDB', h='156.35.22.10')
   MLsetActivitiesSimilaritiesbyParticipantActivity(connect)  
-  MLinitializeAllML(connect)
-  
+  allmodels <- MLinitializeAllML(connect)
+  MLsaveModelsToDB(connect, allmodels)
+  dbDisconnect(conn)
+}
+
+BASIConlyModelLearningInterface <- function() {
+  connect <- DBconnectToHARDB(u='essy', p='Papatolati666', dbn='ESSYDB', h='156.35.22.10')
+  allmodels <- MLinitializeAllML(connect)
+  MLsaveModelsToDB(connect, allmodels)
   dbDisconnect(conn)
 }
 
 
+BASIConlyModelLearningInterfaceNeedDB <- function(connect) {
+  #connect <- DBconnectToHARDB(u='essy', p='Papatolati666', dbn='ESSYDB', h='156.35.22.10')
+  allmodels <- MLinitializeAllML(connect)
+  MLsaveModelsToDB(connect, allmodels)
+  #dbDisconnect(conn)
+}
 
 
 
